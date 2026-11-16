@@ -17,7 +17,21 @@ export type RememberedSandboxDirectory = Pick<SandboxSelection, 'drive' | 'worki
  */
 interface StoredEntry extends RememberedSandboxDirectory {
   pickedAt?: number;
+  /** The tab that made the pick: breaks a tie between equal `pickedAt` from two tabs. */
+  tab?: string;
 }
+
+// Picks within a tab never tie (its clock strictly increases), but two tabs can
+// reach the same `pickedAt`; ordering ties by tab id makes every tab agree on
+// which of the two stands.
+const TAB_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+/** Whether `existing` was picked after a pick made in this tab at `pickedAt`. */
+const isNewer = (existing: StoredEntry | undefined, pickedAt: number) => {
+  if (typeof existing?.pickedAt !== 'number') return false;
+  if (existing.pickedAt !== pickedAt) return existing.pickedAt > pickedAt;
+  return typeof existing.tab === 'string' && existing.tab > TAB_ID;
+};
 
 /** Whose memory this is: the signed-in user, in the active workspace (if any). */
 export interface RememberScope {
@@ -129,7 +143,7 @@ export const rememberSandboxSelection = (
     // A newer pick, possibly from another tab, already landed.
     const existing = readEntry(key) as StoredEntry | undefined;
     observePickedAt(existing);
-    if (typeof existing?.pickedAt === 'number' && existing.pickedAt > pickedAt) return;
+    if (isNewer(existing, pickedAt)) return;
 
     // Forgetting is written too, rather than removing the entry, so an older
     // folder save landing afterwards in another tab cannot bring it back.
@@ -139,9 +153,10 @@ export const rememberSandboxSelection = (
         ? {
             ...(selection.drive && { drive: selection.drive }),
             pickedAt,
+            tab: TAB_ID,
             workingDirectory: selection.workingDirectory,
           }
-        : { pickedAt },
+        : { pickedAt, tab: TAB_ID },
     );
   };
 

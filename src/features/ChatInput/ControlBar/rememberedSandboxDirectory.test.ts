@@ -160,4 +160,22 @@ describe('rememberedSandboxDirectory', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  // Two tabs reach the same pickedAt: the tie is broken by tab id, the same
+  // way in every tab, so whichever order the saves land in, one entry stands.
+  it('settles a tie between two tabs the same way whichever lands last', () => {
+    const key = rememberedSandboxDirectoryKey(ME, 'agent-1')!;
+    const stored = (tab: string) =>
+      JSON.stringify({ pickedAt: 5000, tab, workingDirectory: `from-${tab}` });
+
+    // Another tab with a higher id already stored the same pickedAt: it stands.
+    localStorage.setItem(key, stored('~~~~'));
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'here' }, 5000);
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'from-~~~~' });
+
+    // One with a lower id: this tab's pick stands.
+    localStorage.setItem(key, stored('!'));
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'here' }, 5000);
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'here' });
+  });
 });
