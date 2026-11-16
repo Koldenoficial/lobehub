@@ -14,6 +14,8 @@ import type { SandboxSelection } from './useSandboxPlacement';
  * picks nor a pick still waiting for the user id may be lost in between.
  */
 
+// Increasing within this tab and close to the clock, so it also orders picks
+// against other tabs once stored with the remembered folder.
 let pickSeq = 0;
 // The newest pick whose save has landed, per user, workspace and agent — the
 // same scope the memory is kept in, so one user's pick never shadows
@@ -60,10 +62,11 @@ export interface ActiveScope {
 const rememberPick = (
   { agentId, userId, workspaceId }: PickTarget & { userId: string },
   pick: SandboxSelection,
+  seq: number,
   active: ActiveScope,
 ) => {
   const scope = { userId, workspaceId };
-  rememberSandboxSelection(scope, agentId, pick);
+  rememberSandboxSelection(scope, agentId, pick, seq);
   if (active.userId !== userId || (active.workspaceId ?? null) !== (workspaceId ?? null)) return;
   refreshSandboxDefaultSelection(
     agentId,
@@ -73,7 +76,7 @@ const rememberPick = (
 
 /** Mark the start of a pick; the returned number orders it among the agent's picks. */
 export const beginSandboxPick = (): number => {
-  pickSeq += 1;
+  pickSeq = Math.max(pickSeq + 1, Date.now());
   return pickSeq;
 };
 
@@ -98,7 +101,7 @@ export const settleSandboxPick = (
   }
 
   deferredPicks.delete(agentId);
-  rememberPick({ agentId, userId, workspaceId }, pick, active);
+  rememberPick({ agentId, userId, workspaceId }, pick, seq, active);
 };
 
 /** Remember every pick that was waiting for the user id, for the user now known. */
@@ -107,7 +110,7 @@ export const flushDeferredSandboxPicks = (active: ActiveScope & { userId: string
     // Carried into the now-known user's order, so an older save of theirs
     // that lands later cannot replace this newer pick.
     const target = { agentId, userId: active.userId, workspaceId };
-    if (claimOrder(target, seq)) rememberPick(target, pick, active);
+    if (claimOrder(target, seq)) rememberPick(target, pick, seq, active);
   }
   deferredPicks.clear();
 };

@@ -10,6 +10,15 @@ export const REMEMBERED_SANDBOX_DIRECTORY_PREFIX = 'lobechat-sandbox-last-direct
 /** The folder part of a selection: which drive, and where on it. */
 export type RememberedSandboxDirectory = Pick<SandboxSelection, 'drive' | 'workingDirectory'>;
 
+/**
+ * What is stored: the folder, or nothing when the temporary sandbox was picked
+ * on purpose, with when the pick began. Comparable across tabs, so a save in
+ * one tab that lands after a newer pick in another never replaces it.
+ */
+interface StoredEntry extends RememberedSandboxDirectory {
+  pickedAt?: number;
+}
+
 /** Whose memory this is: the signed-in user, in the active workspace (if any). */
 export interface RememberScope {
   userId?: string | null;
@@ -42,19 +51,11 @@ const readEntry = (key: string): unknown => {
 
 // Storage unavailable (private mode, quota): the next conversation starts at
 // the plan's default, as it did before anything was remembered.
-const writeEntry = (key: string, value: RememberedSandboxDirectory) => {
+const writeEntry = (key: string, value: StoredEntry) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // see above
-  }
-};
-
-const removeEntry = (key: string) => {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Storage unavailable: nothing was remembered to forget.
   }
 };
 
@@ -94,23 +95,30 @@ export const rememberSandboxSelection = (
   scope: RememberScope,
   agentId: string,
   selection: SandboxSelection,
+  pickedAt: number = Date.now(),
 ): void => {
   const key = rememberedSandboxDirectoryKey(scope, agentId);
   if (!key) return;
 
-  if (!selection.instanceId && selection.workingDirectory) {
-    writeEntry(
-      key,
-      selection.drive
-        ? { drive: selection.drive, workingDirectory: selection.workingDirectory }
-        : { workingDirectory: selection.workingDirectory },
-    );
-    return;
-  }
-
+  const folder = !selection.instanceId && !!selection.workingDirectory;
   const temporary =
     !selection.instanceId && !selection.environmentId && selection.workingDirectory === undefined;
-  if (!temporary) return;
+  if (!folder && !temporary) return;
 
-  removeEntry(key);
+  // A newer pick, possibly from another tab, already landed.
+  const existing = readEntry(key) as StoredEntry | undefined;
+  if (typeof existing?.pickedAt === 'number' && existing.pickedAt > pickedAt) return;
+
+  // Forgetting is written too, rather than removing the entry, so an older
+  // folder save landing afterwards in another tab cannot bring it back.
+  writeEntry(
+    key,
+    folder
+      ? {
+          ...(selection.drive && { drive: selection.drive }),
+          pickedAt,
+          workingDirectory: selection.workingDirectory,
+        }
+      : { pickedAt },
+  );
 };

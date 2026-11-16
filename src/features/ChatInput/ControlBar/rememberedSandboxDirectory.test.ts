@@ -97,11 +97,22 @@ describe('rememberedSandboxDirectory', () => {
     rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'one' });
     rememberSandboxSelection(ME, 'agent-2', { workingDirectory: 'two' });
 
-    expect(localStorage.getItem(rememberedSandboxDirectoryKey(ME, 'agent-1')!)).toBe(
-      JSON.stringify({ workingDirectory: 'one' }),
-    );
-    expect(localStorage.getItem(rememberedSandboxDirectoryKey(ME, 'agent-2')!)).toBe(
-      JSON.stringify({ workingDirectory: 'two' }),
-    );
+    expect(localStorage.getItem(rememberedSandboxDirectoryKey(ME, 'agent-1'))).toContain('"one"');
+    expect(localStorage.getItem(rememberedSandboxDirectoryKey(ME, 'agent-2'))).toContain('"two"');
+  });
+
+  // Two tabs: the pick made later wins, whichever save lands last.
+  it('never lets an older pick from another tab replace a newer one', () => {
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'newer' }, 2000);
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'older' }, 1000);
+
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'newer' });
+  });
+
+  it('keeps a newer temporary-sandbox pick from being undone by an older folder save', () => {
+    rememberSandboxSelection(ME, 'agent-1', {}, 2000);
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'older' }, 1000);
+
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
   });
 });
