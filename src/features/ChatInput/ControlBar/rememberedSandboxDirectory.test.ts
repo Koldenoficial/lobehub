@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   getRememberedSandboxDirectory,
-  REMEMBERED_SANDBOX_DIRECTORY_KEY,
+  rememberedSandboxDirectoryKey,
   rememberSandboxSelection,
 } from './rememberedSandboxDirectory';
 
@@ -10,7 +10,7 @@ const ME = { userId: 'user-a' };
 const MY_WS = { userId: 'user-a', workspaceId: 'ws_1' };
 
 afterEach(() => {
-  localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
+  localStorage.clear();
 });
 
 describe('rememberedSandboxDirectory', () => {
@@ -63,11 +63,12 @@ describe('rememberedSandboxDirectory', () => {
   });
 
   it('ignores a corrupted store', () => {
-    localStorage.setItem(REMEMBERED_SANDBOX_DIRECTORY_KEY, '{not json');
+    const key = rememberedSandboxDirectoryKey(ME, 'agent-1')!;
+    localStorage.setItem(key, '{not json');
     expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
 
     localStorage.setItem(
-      REMEMBERED_SANDBOX_DIRECTORY_KEY,
+      rememberedSandboxDirectoryKey,
       JSON.stringify({ 'user-a:personal:agent-1': { drive: 'other', workingDirectory: 'x' } }),
     );
     expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
@@ -86,7 +87,21 @@ describe('rememberedSandboxDirectory', () => {
   it('reads and writes nothing before the user is known', () => {
     rememberSandboxSelection({ workspaceId: 'ws_1' }, 'agent-1', { workingDirectory: 'x' });
 
-    expect(localStorage.getItem(REMEMBERED_SANDBOX_DIRECTORY_KEY)).toBeNull();
+    expect(localStorage.length).toBe(0);
     expect(getRememberedSandboxDirectory({ workspaceId: 'ws_1' }, 'agent-1')).toBeUndefined();
+  });
+
+  // Each entry has a key of its own, so a write for one agent never rewrites
+  // another's — two tabs saving at once cannot drop each other's folder.
+  it('stores each agent under its own key', () => {
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'one' });
+    rememberSandboxSelection(ME, 'agent-2', { workingDirectory: 'two' });
+
+    expect(localStorage.getItem(rememberedSandboxDirectoryKey(ME, 'agent-1')!)).toBe(
+      JSON.stringify({ workingDirectory: 'one' }),
+    );
+    expect(localStorage.getItem(rememberedSandboxDirectoryKey(ME, 'agent-2')!)).toBe(
+      JSON.stringify({ workingDirectory: 'two' }),
+    );
   });
 });

@@ -7,10 +7,7 @@ import {
   toSandboxTopicMetadata,
 } from '@/store/chat/pendingSandboxSelection';
 
-import {
-  getRememberedSandboxDirectory,
-  REMEMBERED_SANDBOX_DIRECTORY_KEY,
-} from '../rememberedSandboxDirectory';
+import { getRememberedSandboxDirectory } from '../rememberedSandboxDirectory';
 import SandboxStorageSection from '../SandboxStorageSection';
 import type { SandboxSelection } from '../useSandboxPlacement';
 
@@ -126,7 +123,7 @@ beforeEach(() => {
 afterEach(() => {
   consumePendingSandboxSelection(AGENT);
   consumePendingSandboxSelection(OTHER_AGENT);
-  localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
+  localStorage.clear();
 });
 
 const commit = () => {
@@ -411,5 +408,34 @@ describe('SandboxStorageSection — T-14158', () => {
     expect(getRememberedSandboxDirectory({ userId: 'user-b' }, AGENT)).toEqual({
       workingDirectory: 'projects/other',
     });
+  });
+
+  it('keeps the order of two picks made before the user id arrived', async () => {
+    state.userId = undefined;
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishFirst!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishFirst = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    // The newer pick lands first and waits for the user id, which then arrives.
+    await act(async () => fireEvent.click(screen.getByText('pick-other')));
+    act(() => {
+      state.userId = 'user-a';
+      commit();
+    });
+    // The older save lands last.
+    await act(async () => finishFirst());
+
+    openNewConversation();
+    expect(screen.getByTestId('chip').textContent).toBe('projects/other');
   });
 });

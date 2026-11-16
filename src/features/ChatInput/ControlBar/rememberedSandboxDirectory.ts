@@ -1,11 +1,14 @@
 import type { SandboxSelection } from './useSandboxPlacement';
 
-export const REMEMBERED_SANDBOX_DIRECTORY_KEY = 'lobechat-sandbox-last-directory';
+/**
+ * Prefix of every entry. Each user + workspace + agent has a key of its own
+ * rather than sharing one JSON object, so two tabs saving at once never read
+ * the same object and drop each other's entry on write.
+ */
+export const REMEMBERED_SANDBOX_DIRECTORY_PREFIX = 'lobechat-sandbox-last-directory';
 
 /** The folder part of a selection: which drive, and where on it. */
 export type RememberedSandboxDirectory = Pick<SandboxSelection, 'drive' | 'workingDirectory'>;
-
-type Store = Record<string, RememberedSandboxDirectory>;
 
 /** Whose memory this is: the signed-in user, in the active workspace (if any). */
 export interface RememberScope {
@@ -20,26 +23,38 @@ export interface RememberScope {
 // one workspace means nothing in another; the agent is part of the key because
 // each agent's conversations tend to live in their own folder. Without a known
 // user nothing is read or written.
-const keyOf = ({ userId, workspaceId }: RememberScope, agentId: string) =>
-  userId ? `${userId}:${workspaceId || 'personal'}:${agentId}` : undefined;
+export const rememberedSandboxDirectoryKey = (
+  { userId, workspaceId }: RememberScope,
+  agentId: string,
+) =>
+  userId
+    ? `${REMEMBERED_SANDBOX_DIRECTORY_PREFIX}:${userId}:${workspaceId || 'personal'}:${agentId}`
+    : undefined;
 
-const readStore = (): Store => {
+const readEntry = (key: string): unknown => {
   try {
-    const raw = localStorage.getItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : undefined;
   } catch {
-    return {};
+    return undefined;
   }
 };
 
-const writeStore = (store: Store) => {
+// Storage unavailable (private mode, quota): the next conversation starts at
+// the plan's default, as it did before anything was remembered.
+const writeEntry = (key: string, value: RememberedSandboxDirectory) => {
   try {
-    localStorage.setItem(REMEMBERED_SANDBOX_DIRECTORY_KEY, JSON.stringify(store));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Storage unavailable (private mode, quota): the next conversation starts
-    // at the plan's default, as it did before anything was remembered.
+    // see above
+  }
+};
+
+const removeEntry = (key: string) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Storage unavailable: nothing was remembered to forget.
   }
 };
 
@@ -55,10 +70,10 @@ export const getRememberedSandboxDirectory = (
   scope: RememberScope,
   agentId: string,
 ): RememberedSandboxDirectory | undefined => {
-  const key = keyOf(scope, agentId);
+  const key = rememberedSandboxDirectoryKey(scope, agentId);
   if (!key) return undefined;
 
-  const value = readStore()[key];
+  const value = readEntry(key);
   if (!isValid(value)) return undefined;
 
   return value.drive
@@ -80,15 +95,16 @@ export const rememberSandboxSelection = (
   agentId: string,
   selection: SandboxSelection,
 ): void => {
-  const key = keyOf(scope, agentId);
+  const key = rememberedSandboxDirectoryKey(scope, agentId);
   if (!key) return;
 
   if (!selection.instanceId && selection.workingDirectory) {
-    const store = readStore();
-    store[key] = selection.drive
-      ? { drive: selection.drive, workingDirectory: selection.workingDirectory }
-      : { workingDirectory: selection.workingDirectory };
-    writeStore(store);
+    writeEntry(
+      key,
+      selection.drive
+        ? { drive: selection.drive, workingDirectory: selection.workingDirectory }
+        : { workingDirectory: selection.workingDirectory },
+    );
     return;
   }
 
@@ -96,8 +112,5 @@ export const rememberSandboxSelection = (
     !selection.instanceId && !selection.environmentId && selection.workingDirectory === undefined;
   if (!temporary) return;
 
-  const store = readStore();
-  if (!(key in store)) return;
-  delete store[key];
-  writeStore(store);
+  removeEntry(key);
 };

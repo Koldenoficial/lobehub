@@ -24,9 +24,20 @@ const latestSettled = new Map<string, number>();
 
 const orderKey = ({ agentId, userId, workspaceId }: PickTarget & { userId?: string | null }) =>
   `${userId ?? ''}:${workspaceId ?? ''}:${agentId}`;
+
+/** Record `seq` as the scope's newest landed pick, unless a newer one already is. */
+const claimOrder = (target: PickTarget & { userId?: string | null }, seq: number): boolean => {
+  const key = orderKey(target);
+  if ((latestSettled.get(key) ?? 0) > seq) return false;
+  latestSettled.set(key, seq);
+  return true;
+};
 // Picks saved before the user id was known, with the workspace they were made
 // in; remembered once the id arrives.
-const deferredPicks = new Map<string, { pick: SandboxSelection; workspaceId?: string | null }>();
+const deferredPicks = new Map<
+  string,
+  { pick: SandboxSelection; seq: number; workspaceId?: string | null }
+>();
 
 interface PickTarget {
   agentId: string;
@@ -79,12 +90,10 @@ export const settleSandboxPick = (
   pick: SandboxSelection,
   active: ActiveScope,
 ): void => {
-  const key = orderKey({ agentId, userId, workspaceId });
-  if ((latestSettled.get(key) ?? 0) > seq) return;
-  latestSettled.set(key, seq);
+  if (!claimOrder({ agentId, userId, workspaceId }, seq)) return;
 
   if (!userId) {
-    deferredPicks.set(agentId, { pick, workspaceId });
+    deferredPicks.set(agentId, { pick, seq, workspaceId });
     return;
   }
 
@@ -94,8 +103,11 @@ export const settleSandboxPick = (
 
 /** Remember every pick that was waiting for the user id, for the user now known. */
 export const flushDeferredSandboxPicks = (active: ActiveScope & { userId: string }): void => {
-  for (const [agentId, { pick, workspaceId }] of deferredPicks) {
-    rememberPick({ agentId, userId: active.userId, workspaceId }, pick, active);
+  for (const [agentId, { pick, seq, workspaceId }] of deferredPicks) {
+    // Carried into the now-known user's order, so an older save of theirs
+    // that lands later cannot replace this newer pick.
+    const target = { agentId, userId: active.userId, workspaceId };
+    if (claimOrder(target, seq)) rememberPick(target, pick, active);
   }
   deferredPicks.clear();
 };

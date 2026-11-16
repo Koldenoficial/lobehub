@@ -8,10 +8,7 @@ import {
   setPendingSandboxSelection,
 } from '@/store/chat/pendingSandboxSelection';
 
-import {
-  REMEMBERED_SANDBOX_DIRECTORY_KEY,
-  rememberSandboxSelection,
-} from './rememberedSandboxDirectory';
+import { rememberSandboxSelection } from './rememberedSandboxDirectory';
 import { useSeedDefaultSelection } from './useSeedDefaultSelection';
 
 const getEntitlement = vi.hoisted(() => vi.fn());
@@ -40,7 +37,7 @@ const AGENT = 'agent-seed';
 afterEach(() => {
   consumePendingSandboxSelection(AGENT);
   getEntitlement.mockReset();
-  localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
+  localStorage.clear();
   user.id = 'user-a';
 });
 
