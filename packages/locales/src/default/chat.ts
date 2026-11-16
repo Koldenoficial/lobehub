@@ -976,6 +976,8 @@ export default {
   'heteroAgent.executionTarget.sandbox': 'Cloud Sandbox',
   'heteroAgent.executionTarget.sandboxDesc': 'Runs in the cloud, no machine needed',
   'heteroAgent.executionTarget.workspaceGroup': 'Workspace Devices',
+  'heteroAgent.executionTarget.deviceGroupSummary': '{{online}} online · {{total}} total',
+  'heteroAgent.executionTarget.devicesGroup': 'Devices',
   'heteroAgent.executionTarget.downloadDesktop': 'Get Desktop App',
   'heteroAgent.executionTarget.downloadDesktopDesc': 'Run agents with access to your computer',
   'heteroAgent.executionTarget.downloadDesktopTitle': 'Get the desktop app',
