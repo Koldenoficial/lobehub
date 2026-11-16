@@ -195,4 +195,19 @@ describe('pendingSandboxSelection', () => {
       consumePendingSandboxSelection('agent-loading');
     });
   });
+
+  it("never hands the previous account's default to a send that awaited the entitlement across a switch", async () => {
+    syncPendingSandboxScope({ userId: 'user-a', workspaceId: 'ws_9' });
+    let answer!: (value: { entitled: boolean }) => void;
+    mocks.getEntitlement.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    setSandboxDefaultSelection('agent-switch', { workingDirectory: 'a-folder' });
+
+    const pending = resolvePendingSandboxSelection('agent-switch');
+    syncPendingSandboxScope({ userId: 'user-b', workspaceId: 'ws_9' });
+    answer({ entitled: true });
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(getPendingSandboxSelection('agent-switch')).toBeUndefined();
+    setSandboxDefaultSelection('agent-switch');
+  });
 });

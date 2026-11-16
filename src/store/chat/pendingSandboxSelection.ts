@@ -65,6 +65,8 @@ export const setPendingSandboxSelection = (agentId: string, selection?: SandboxS
  * pick made while it loaded is that user's own.
  */
 let pendingScope: { userId?: string | null; workspaceId?: string | null } | undefined;
+// Bumped on every switch, so work started before one can tell it is stale.
+let scopeGeneration = 0;
 
 /** Tell the pending picks who is active now; a switch drops every pick made before it. */
 export const syncPendingSandboxScope = (scope: {
@@ -78,6 +80,8 @@ export const syncPendingSandboxScope = (scope: {
   const userSwitched = !!previous.userId && previous.userId !== scope.userId;
   const workspaceSwitched = (previous.workspaceId ?? null) !== (scope.workspaceId ?? null);
   if (!userSwitched && !workspaceSwitched) return;
+
+  scopeGeneration += 1;
   if (map.size === 0) return;
 
   map.clear();
@@ -173,7 +177,13 @@ export const resolvePendingSandboxSelection = async (
   if (picked) return picked;
 
   const fallback = defaults.get(agentId);
-  if (!fallback || !(await isDriveEntitled())) return undefined;
+  if (!fallback) return undefined;
+
+  const generation = scopeGeneration;
+  if (!(await isDriveEntitled())) return undefined;
+  // The account or workspace switched while the entitlement was asked: the
+  // fallback was the previous one's, and must not reach this send.
+  if (generation !== scopeGeneration) return map.get(agentId);
 
   // A pick made while the entitlement was in flight wins over the default.
   if (!map.has(agentId)) setPendingSandboxSelection(agentId, fallback);
