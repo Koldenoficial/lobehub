@@ -101,6 +101,20 @@ export const setSandboxDefaultSelection = (agentId: string, selection?: SandboxS
 };
 
 /**
+ * Move an agent's not-yet-picked default to a better one learned later — a
+ * folder whose save finished after a new conversation had already been
+ * seeded. Only touches what the composer filled in itself: a registered
+ * default, and a pending slot holding a seeded value. A pick stays.
+ */
+export const refreshSandboxDefaultSelection = (
+  agentId: string,
+  selection: SandboxSelection,
+): void => {
+  if (defaults.has(agentId)) setSandboxDefaultSelection(agentId, selection);
+  if (isPendingSandboxSelectionSeeded(agentId)) seedPendingSandboxSelection(agentId, selection);
+};
+
+/**
  * Whether the active workspace's plan includes a drive. A cached yes is taken
  * as is; a cached no is confirmed with the server first, because the cache is
  * persisted — an account that has just upgraded still reads no until its

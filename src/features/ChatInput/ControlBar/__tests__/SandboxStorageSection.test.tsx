@@ -183,4 +183,28 @@ describe('SandboxStorageSection — T-14158', () => {
     openNewConversation();
     expect(screen.getByTestId('chip').textContent).toBe('.');
   });
+
+  it('carries a folder whose save finished after a new conversation opened', async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishSave!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishSave = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+
+    // "New topic" while the save is still in flight: seeded from the old memory.
+    openNewConversation();
+    expect(screen.getByTestId('chip').textContent).toBe('.');
+
+    await act(async () => finishSave());
+    expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
+  });
 });

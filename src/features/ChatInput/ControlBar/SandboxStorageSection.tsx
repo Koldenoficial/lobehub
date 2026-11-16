@@ -4,11 +4,16 @@ import { memo, useCallback } from 'react';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import SafeBoundary from '@/components/ErrorBoundary';
+import { refreshSandboxDefaultSelection } from '@/store/chat/pendingSandboxSelection';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
 
 import { useTopicId } from '../hooks/useTopicId';
-import { rememberSandboxSelection } from './rememberedSandboxDirectory';
+import { resolveDefaultSandboxSelection } from './defaultSandboxSelection';
+import {
+  getRememberedSandboxDirectory,
+  rememberSandboxSelection,
+} from './rememberedSandboxDirectory';
 import SandboxDrivePicker from './SandboxDrivePicker';
 import { type SandboxSelection, useSandboxPlacement } from './useSandboxPlacement';
 import { useSandboxStorageAccess } from './useSandboxStorageAccess';
@@ -46,7 +51,14 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
   const pick = useCallback(
     async (next: SandboxSelection) => {
       await setSelection(next);
-      rememberSandboxSelection({ userId, workspaceId }, agentId, next);
+      const scope = { userId, workspaceId };
+      rememberSandboxSelection(scope, agentId, next);
+      // A new conversation opened while the save was in flight was seeded from
+      // the folder before; carry this one over to it.
+      refreshSandboxDefaultSelection(
+        agentId,
+        resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
+      );
     },
     [agentId, setSelection, userId, workspaceId],
   );
