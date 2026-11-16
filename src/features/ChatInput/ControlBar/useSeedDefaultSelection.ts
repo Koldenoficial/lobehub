@@ -6,6 +6,8 @@ import {
   seedPendingSandboxSelection,
   setSandboxDefaultSelection,
 } from '@/store/chat/pendingSandboxSelection';
+import { useUserStore } from '@/store/user';
+import { userProfileSelectors } from '@/store/user/selectors';
 
 import { resolveDefaultSandboxSelection } from './defaultSandboxSelection';
 import { getRememberedSandboxDirectory } from './rememberedSandboxDirectory';
@@ -29,6 +31,7 @@ export const useSeedDefaultSelection = (
   { eligible, entitled, hasTopic }: { eligible: boolean; entitled: boolean; hasTopic: boolean },
 ) => {
   const workspaceId = useActiveWorkspaceId();
+  const userId = useUserStore(userProfileSelectors.userId);
 
   // Cleared on unmount as well: once the run moves off the sandbox, nothing
   // should hand a sandbox folder to a conversation on a machine. Registered
@@ -41,11 +44,11 @@ export const useSeedDefaultSelection = (
       agentId,
       resolveDefaultSandboxSelection(
         workspaceId,
-        getRememberedSandboxDirectory(workspaceId, agentId),
+        getRememberedSandboxDirectory({ userId, workspaceId }, agentId),
       ),
     );
     return () => setSandboxDefaultSelection(agentId);
-  }, [agentId, eligible, hasTopic, workspaceId]);
+  }, [agentId, eligible, hasTopic, userId, workspaceId]);
 
   useEffect(() => {
     if (!entitled || hasTopic || getPendingSandboxSelection(agentId)) return;
@@ -54,8 +57,8 @@ export const useSeedDefaultSelection = (
       agentId,
       resolveDefaultSandboxSelection(
         workspaceId,
-        getRememberedSandboxDirectory(workspaceId, agentId),
+        getRememberedSandboxDirectory({ userId, workspaceId }, agentId),
       ),
     );
-  }, [agentId, entitled, hasTopic, workspaceId]);
+  }, [agentId, entitled, hasTopic, userId, workspaceId]);
 };

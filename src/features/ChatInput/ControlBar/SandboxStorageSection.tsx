@@ -4,6 +4,8 @@ import { memo, useCallback } from 'react';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import SafeBoundary from '@/components/ErrorBoundary';
+import { useUserStore } from '@/store/user';
+import { userProfileSelectors } from '@/store/user/selectors';
 
 import { useTopicId } from '../hooks/useTopicId';
 import { rememberSandboxSelection } from './rememberedSandboxDirectory';
@@ -34,6 +36,7 @@ interface SandboxStorageSectionProps {
 const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }) => {
   const { eligible, status } = useSandboxStorageAccess(agentId);
   const workspaceId = useActiveWorkspaceId();
+  const userId = useUserStore(userProfileSelectors.userId);
   const { projectId, selection, setSelection, topicId } = useSandboxPlacement(
     agentId,
     useTopicId(),
@@ -43,9 +46,9 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
   const pick = useCallback(
     async (next: SandboxSelection) => {
       await setSelection(next);
-      rememberSandboxSelection(workspaceId, agentId, next);
+      rememberSandboxSelection({ userId, workspaceId }, agentId, next);
     },
-    [agentId, setSelection, workspaceId],
+    [agentId, setSelection, userId, workspaceId],
   );
   useSeedDefaultSelection(agentId, {
     eligible,

@@ -20,6 +20,10 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
   useActiveWorkspaceId: () => null,
 }));
 
+vi.mock('@/store/user', () => ({
+  useUserStore: (selector: (s: object) => unknown) => selector({ user: { id: 'user-a' } }),
+}));
+
 vi.mock('@/services/sandboxStorage', () => ({
   sandboxStorageService: { getEntitlement },
 }));
@@ -94,7 +98,7 @@ describe('useSeedDefaultSelection', () => {
     // The first send consumes the slot; the person then moves the conversation.
     consumePendingSandboxSelection(AGENT);
     rerender({ hasTopic: true });
-    rememberSandboxSelection(null, AGENT, { workingDirectory: 'projects/demo' });
+    rememberSandboxSelection({ userId: 'user-a' }, AGENT, { workingDirectory: 'projects/demo' });
 
     // A new conversation opens.
     rerender({ hasTopic: false });
@@ -103,7 +107,7 @@ describe('useSeedDefaultSelection', () => {
 
   it('registers the remembered folder for a send made before the entitlement loads', async () => {
     getEntitlement.mockResolvedValue({ entitled: true });
-    rememberSandboxSelection(null, AGENT, { workingDirectory: 'projects/demo' });
+    rememberSandboxSelection({ userId: 'user-a' }, AGENT, { workingDirectory: 'projects/demo' });
 
     renderHook(() =>
       useSeedDefaultSelection(AGENT, { eligible: true, entitled: false, hasTopic: false }),

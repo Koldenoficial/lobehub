@@ -7,11 +7,21 @@ export type RememberedSandboxDirectory = Pick<SandboxSelection, 'drive' | 'worki
 
 type Store = Record<string, RememberedSandboxDirectory>;
 
-// The drive is per account, so a folder picked in one workspace means nothing
-// in another; the agent is part of the key because each agent's conversations
-// tend to live in their own folder.
-const keyOf = (workspaceId: string | null | undefined, agentId: string) =>
-  `${workspaceId || 'personal'}:${agentId}`;
+/** Whose memory this is: the signed-in user, in the active workspace (if any). */
+export interface RememberScope {
+  userId?: string | null;
+  workspaceId?: string | null;
+}
+
+// Scoped to the signed-in user first: storage outlives a logout, and a shared
+// agent has the same workspace and agent ids for every member, while a
+// personal-drive folder is one member's own — the next person on the same
+// browser must not inherit it. The drive is per account, so a folder picked in
+// one workspace means nothing in another; the agent is part of the key because
+// each agent's conversations tend to live in their own folder. Without a known
+// user nothing is read or written.
+const keyOf = ({ userId, workspaceId }: RememberScope, agentId: string) =>
+  userId ? `${userId}:${workspaceId || 'personal'}:${agentId}` : undefined;
 
 const readStore = (): Store => {
   try {
@@ -42,10 +52,13 @@ const isValid = (value: unknown): value is RememberedSandboxDirectory => {
 
 /** The folder this agent's last conversation was pointed at, if any. */
 export const getRememberedSandboxDirectory = (
-  workspaceId: string | null | undefined,
+  scope: RememberScope,
   agentId: string,
 ): RememberedSandboxDirectory | undefined => {
-  const value = readStore()[keyOf(workspaceId, agentId)];
+  const key = keyOf(scope, agentId);
+  if (!key) return undefined;
+
+  const value = readStore()[key];
   if (!isValid(value)) return undefined;
 
   return value.drive
@@ -63,11 +76,12 @@ export const getRememberedSandboxDirectory = (
  *   directory, says nothing about folders and leaves the memory as it was.
  */
 export const rememberSandboxSelection = (
-  workspaceId: string | null | undefined,
+  scope: RememberScope,
   agentId: string,
   selection: SandboxSelection,
 ): void => {
-  const key = keyOf(workspaceId, agentId);
+  const key = keyOf(scope, agentId);
+  if (!key) return;
 
   if (!selection.instanceId && selection.workingDirectory) {
     const store = readStore();

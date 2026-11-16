@@ -6,67 +6,87 @@ import {
   rememberSandboxSelection,
 } from './rememberedSandboxDirectory';
 
+const ME = { userId: 'user-a' };
+const MY_WS = { userId: 'user-a', workspaceId: 'ws_1' };
+
 afterEach(() => {
   localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
 });
 
 describe('rememberedSandboxDirectory', () => {
   it('remembers a folder picked on the drive', () => {
-    rememberSandboxSelection(null, 'agent-1', { workingDirectory: 'projects/demo' });
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'projects/demo' });
 
-    expect(getRememberedSandboxDirectory(null, 'agent-1')).toEqual({
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({
       workingDirectory: 'projects/demo',
     });
   });
 
   it('keeps the drive of a workspace pick', () => {
-    rememberSandboxSelection('ws_1', 'agent-1', { drive: 'public', workingDirectory: 'team' });
+    rememberSandboxSelection(MY_WS, 'agent-1', { drive: 'public', workingDirectory: 'team' });
 
-    expect(getRememberedSandboxDirectory('ws_1', 'agent-1')).toEqual({
+    expect(getRememberedSandboxDirectory(MY_WS, 'agent-1')).toEqual({
       drive: 'public',
       workingDirectory: 'team',
     });
   });
 
   it('keeps each workspace and agent apart', () => {
-    rememberSandboxSelection(null, 'agent-1', { workingDirectory: 'mine' });
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'mine' });
 
-    expect(getRememberedSandboxDirectory('ws_1', 'agent-1')).toBeUndefined();
-    expect(getRememberedSandboxDirectory(null, 'agent-2')).toBeUndefined();
+    expect(getRememberedSandboxDirectory(MY_WS, 'agent-1')).toBeUndefined();
+    expect(getRememberedSandboxDirectory(ME, 'agent-2')).toBeUndefined();
   });
 
   it('remembers the folder of a repository pick but not the repository', () => {
-    rememberSandboxSelection(null, 'agent-1', {
+    rememberSandboxSelection(ME, 'agent-1', {
       environmentId: 'env_1',
       workingDirectory: 'code',
     });
 
-    expect(getRememberedSandboxDirectory(null, 'agent-1')).toEqual({ workingDirectory: 'code' });
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'code' });
   });
 
   it('forgets the folder when the temporary sandbox is picked on purpose', () => {
-    rememberSandboxSelection(null, 'agent-1', { workingDirectory: 'code' });
-    rememberSandboxSelection(null, 'agent-1', {});
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'code' });
+    rememberSandboxSelection(ME, 'agent-1', {});
 
-    expect(getRememberedSandboxDirectory(null, 'agent-1')).toBeUndefined();
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
   });
 
   it('leaves the folder alone when only the repository changes', () => {
-    rememberSandboxSelection(null, 'agent-1', { workingDirectory: 'code' });
-    rememberSandboxSelection(null, 'agent-1', { environmentId: 'env_1' });
-    rememberSandboxSelection(null, 'agent-1', { instanceId: 'inst_1' });
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'code' });
+    rememberSandboxSelection(ME, 'agent-1', { environmentId: 'env_1' });
+    rememberSandboxSelection(ME, 'agent-1', { instanceId: 'inst_1' });
 
-    expect(getRememberedSandboxDirectory(null, 'agent-1')).toEqual({ workingDirectory: 'code' });
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'code' });
   });
 
   it('ignores a corrupted store', () => {
     localStorage.setItem(REMEMBERED_SANDBOX_DIRECTORY_KEY, '{not json');
-    expect(getRememberedSandboxDirectory(null, 'agent-1')).toBeUndefined();
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
 
     localStorage.setItem(
       REMEMBERED_SANDBOX_DIRECTORY_KEY,
-      JSON.stringify({ 'personal:agent-1': { drive: 'other', workingDirectory: 'x' } }),
+      JSON.stringify({ 'user-a:personal:agent-1': { drive: 'other', workingDirectory: 'x' } }),
     );
-    expect(getRememberedSandboxDirectory(null, 'agent-1')).toBeUndefined();
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
+  });
+
+  // Storage outlives a logout; the next member on the same browser shares the
+  // workspace and the agent but not the first member's personal folders.
+  it("never hands one member's folder to another on the same browser", () => {
+    rememberSandboxSelection(MY_WS, 'agent-1', { drive: 'personal', workingDirectory: 'mine' });
+
+    expect(
+      getRememberedSandboxDirectory({ userId: 'user-b', workspaceId: 'ws_1' }, 'agent-1'),
+    ).toBeUndefined();
+  });
+
+  it('reads and writes nothing before the user is known', () => {
+    rememberSandboxSelection({ workspaceId: 'ws_1' }, 'agent-1', { workingDirectory: 'x' });
+
+    expect(localStorage.getItem(REMEMBERED_SANDBOX_DIRECTORY_KEY)).toBeNull();
+    expect(getRememberedSandboxDirectory({ workspaceId: 'ws_1' }, 'agent-1')).toBeUndefined();
   });
 });

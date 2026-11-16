@@ -66,6 +66,10 @@ vi.mock('../useSandboxStorageAccess', () => ({
 vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
   useActiveWorkspaceId: () => null,
 }));
+
+vi.mock('@/store/user', () => ({
+  useUserStore: (selector: (s: object) => unknown) => selector({ user: { id: 'user-a' } }),
+}));
 vi.mock('@/services/sandboxStorage', () => ({
   sandboxStorageService: { getEntitlement: vi.fn() },
 }));
