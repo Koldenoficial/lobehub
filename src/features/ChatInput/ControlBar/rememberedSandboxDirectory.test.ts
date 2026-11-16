@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   getRememberedSandboxDirectory,
@@ -130,5 +130,34 @@ describe('rememberedSandboxDirectory', () => {
     rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'fresh' }, nextSandboxPickTime());
 
     expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'fresh' });
+  });
+
+  // Storage has no locking between tabs; the read-compare-write runs under a
+  // Web Lock named after the entry, so two tabs saving it take turns.
+  it('serializes writes to an entry through a Web Lock named after it', async () => {
+    let queue = Promise.resolve();
+    const request = vi.fn((name: string, callback: () => unknown) => {
+      const run = queue.then(callback);
+      queue = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    });
+    vi.stubGlobal('navigator', { ...navigator, locks: { request } });
+
+    try {
+      const newer = rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'newer' }, 2000);
+      const older = rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'older' }, 1000);
+      await Promise.all([newer, older]);
+
+      expect(request).toHaveBeenCalledWith(
+        rememberedSandboxDirectoryKey(ME, 'agent-1'),
+        expect.any(Function),
+      );
+      expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'newer' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

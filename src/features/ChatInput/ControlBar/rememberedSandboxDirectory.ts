@@ -116,7 +116,7 @@ export const rememberSandboxSelection = (
   agentId: string,
   selection: SandboxSelection,
   pickedAt: number = nextSandboxPickTime(),
-): void => {
+): Promise<void> | undefined => {
   const key = rememberedSandboxDirectoryKey(scope, agentId);
   if (!key) return;
 
@@ -125,21 +125,39 @@ export const rememberSandboxSelection = (
     !selection.instanceId && !selection.environmentId && selection.workingDirectory === undefined;
   if (!folder && !temporary) return;
 
-  // A newer pick, possibly from another tab, already landed.
-  const existing = readEntry(key) as StoredEntry | undefined;
-  observePickedAt(existing);
-  if (typeof existing?.pickedAt === 'number' && existing.pickedAt > pickedAt) return;
+  const write = () => {
+    // A newer pick, possibly from another tab, already landed.
+    const existing = readEntry(key) as StoredEntry | undefined;
+    observePickedAt(existing);
+    if (typeof existing?.pickedAt === 'number' && existing.pickedAt > pickedAt) return;
 
-  // Forgetting is written too, rather than removing the entry, so an older
-  // folder save landing afterwards in another tab cannot bring it back.
-  writeEntry(
-    key,
-    folder
-      ? {
-          ...(selection.drive && { drive: selection.drive }),
-          pickedAt,
-          workingDirectory: selection.workingDirectory,
-        }
-      : { pickedAt },
+    // Forgetting is written too, rather than removing the entry, so an older
+    // folder save landing afterwards in another tab cannot bring it back.
+    writeEntry(
+      key,
+      folder
+        ? {
+            ...(selection.drive && { drive: selection.drive }),
+            pickedAt,
+            workingDirectory: selection.workingDirectory,
+          }
+        : { pickedAt },
+    );
+  };
+
+  // Storage has no locking between tabs, so the read, the comparison and the
+  // write run under a Web Lock named after the entry: two tabs saving the same
+  // entry take turns, and the second sees what the first wrote. Without the
+  // Locks API (old browsers, tests) the write happens at once, as before.
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  if (!locks) {
+    write();
+    return;
+  }
+
+  return locks.request(key, write).then(
+    () => undefined,
+    // The lock itself failed (e.g. the document is going away): write anyway.
+    () => write(),
   );
 };

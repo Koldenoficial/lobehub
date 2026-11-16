@@ -64,12 +64,18 @@ const rememberPick = (
   active: ActiveScope,
 ) => {
   const scope = { userId, workspaceId };
-  rememberSandboxSelection(scope, agentId, pick, seq);
+  const written = rememberSandboxSelection(scope, agentId, pick, seq);
   if (active.userId !== userId || (active.workspaceId ?? null) !== (workspaceId ?? null)) return;
-  refreshSandboxDefaultSelection(
-    agentId,
-    resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
-  );
+
+  // Read back once the entry is written, so the default is what was stored —
+  // this pick, or a newer one another tab stored first.
+  const refresh = () =>
+    refreshSandboxDefaultSelection(
+      agentId,
+      resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
+    );
+  if (written) void written.then(refresh);
+  else refresh();
 };
 
 /** Mark the start of a pick; the returned number orders it among the agent's picks. */
