@@ -336,7 +336,6 @@ describe('channel schema', () => {
         { userId: 'missing-user' },
         { userId: null, agentId: 'missing-agent', routingStatus: 'reply' as const },
         { userId: ownerId, agentId: first.agent.agentId },
-        { userId: null, agentId: first.agent.agentId },
         { userId: ownerId, routingStatus: 'reply' as const },
       ]) {
         await expect(
@@ -349,6 +348,25 @@ describe('channel schema', () => {
           }),
         ).rejects.toThrow();
       }
+    });
+
+    it('accepts a request an Agent wrote', async () => {
+      const first = await createChannel('First');
+      const message = await createMessage(first.channel.id, first.owner.id, 1);
+
+      const [request] = await serverDB
+        .insert(channelMessages)
+        .values({
+          ...message,
+          agentId: first.agent.agentId,
+          id: undefined,
+          requestKey: 'agent-request',
+          sequence: 2,
+          userId: null,
+        })
+        .returning();
+      expect(request).toMatchObject({ agentId: first.agent.agentId, userId: null });
+      expect(request.routingStatus).not.toBe('reply');
     });
 
     it('keeps Channel attachments unique and drops them with the file', async () => {
