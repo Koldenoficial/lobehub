@@ -15,9 +15,10 @@ import type { SandboxSelection } from './useSandboxPlacement';
  */
 
 let pickSeq = 0;
-// The latest pick per agent: an older save that lands late must not replace a
-// newer choice.
-const latestPick = new Map<string, number>();
+// The newest pick per agent whose save has landed: an older save that lands
+// late must not replace it. Counted on success only, so a newer pick that
+// fails leaves an older one that succeeds free to land.
+const latestSettled = new Map<string, number>();
 // Picks saved before the user id was known, with the workspace they were made
 // in; remembered once the id arrives.
 const deferredPicks = new Map<string, { pick: SandboxSelection; workspaceId?: string | null }>();
@@ -44,22 +45,26 @@ const rememberPick = (
   );
 };
 
-/** Mark the start of a pick; the returned number settles it. */
-export const beginSandboxPick = (agentId: string): number => {
+/** Mark the start of a pick; the returned number orders it among the agent's picks. */
+export const beginSandboxPick = (): number => {
   pickSeq += 1;
-  latestPick.set(agentId, pickSeq);
   return pickSeq;
 };
 
 /**
  * A pick's save landed. Remembered unless a newer pick for the same agent has
- * started since; held for later when the user is not known yet.
+ * already landed; held for later when the user is not known yet.
+ *
+ * `userId` is whoever made the pick; it is only filled in at landing time when
+ * nobody was known when the pick began, so a sign-in as someone else in
+ * another tab cannot claim it.
  */
 export const settleSandboxPick = (
   { agentId, seq, userId, workspaceId }: PickTarget & { seq: number; userId?: string | null },
   pick: SandboxSelection,
 ): void => {
-  if (latestPick.get(agentId) !== seq) return;
+  if ((latestSettled.get(agentId) ?? 0) > seq) return;
+  latestSettled.set(agentId, seq);
 
   if (!userId) {
     deferredPicks.set(agentId, { pick, workspaceId });

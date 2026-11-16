@@ -7,7 +7,10 @@ import {
   toSandboxTopicMetadata,
 } from '@/store/chat/pendingSandboxSelection';
 
-import { REMEMBERED_SANDBOX_DIRECTORY_KEY } from '../rememberedSandboxDirectory';
+import {
+  getRememberedSandboxDirectory,
+  REMEMBERED_SANDBOX_DIRECTORY_KEY,
+} from '../rememberedSandboxDirectory';
 import SandboxStorageSection from '../SandboxStorageSection';
 import type { SandboxSelection } from '../useSandboxPlacement';
 
@@ -301,5 +304,56 @@ describe('SandboxStorageSection — T-14158', () => {
 
     openNewConversation();
     expect(screen.getByTestId('chip').textContent).toBe('projects/other');
+  });
+
+  it('keeps an older pick that succeeds after a newer one failed', async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishFirst!: () => void;
+    state.updateTopicMetadata
+      .mockImplementationOnce(
+        (id, metadata) =>
+          new Promise<void>((resolve) => {
+            finishFirst = () => {
+              state.topics[id] = { ...state.topics[id], ...metadata };
+              resolve();
+            };
+          }),
+      )
+      .mockRejectedValueOnce(new Error('offline'));
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    await act(async () => fireEvent.click(screen.getByText('pick-other')));
+    await act(async () => finishFirst());
+
+    openNewConversation();
+    expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
+  });
+
+  it('remembers a pick for whoever made it, even if another user signs in meanwhile', async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishSave!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishSave = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    act(() => {
+      state.userId = 'user-b';
+      commit();
+    });
+    await act(async () => finishSave());
+
+    expect(getRememberedSandboxDirectory({ userId: 'user-b' }, AGENT)).toBeUndefined();
+    expect(getRememberedSandboxDirectory({ userId: 'user-a' }, AGENT)).toEqual({
+      workingDirectory: 'projects/demo',
+    });
   });
 });

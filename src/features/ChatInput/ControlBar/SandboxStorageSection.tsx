@@ -52,17 +52,18 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
 
   // Every pick that lands is remembered for the next conversation, which would
   // otherwise start back at the drive's root. A failed write is not. The user
-  // id is read when the save lands, not when the pick began: it can arrive
-  // while the save is in flight.
+  // is the one who made the pick; only when nobody was known yet is the id
+  // read again when the save lands, since it can arrive in the meantime.
   const pick = useCallback(
     async (next: SandboxSelection) => {
-      const seq = beginSandboxPick(agentId);
+      const seq = beginSandboxPick();
+      const pickedBy = userProfileSelectors.userId(useUserStore.getState());
       await setSelection(next);
       settleSandboxPick(
         {
           agentId,
           seq,
-          userId: userProfileSelectors.userId(useUserStore.getState()),
+          userId: pickedBy ?? userProfileSelectors.userId(useUserStore.getState()),
           workspaceId,
         },
         next,
