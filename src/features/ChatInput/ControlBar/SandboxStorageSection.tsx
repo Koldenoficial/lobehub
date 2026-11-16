@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import SafeBoundary from '@/components/ErrorBoundary';
+import { useSingleton } from '@/hooks/useSingleton';
 import { refreshSandboxDefaultSelection } from '@/store/chat/pendingSandboxSelection';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
@@ -18,6 +19,28 @@ import SandboxDrivePicker from './SandboxDrivePicker';
 import { type SandboxSelection, useSandboxPlacement } from './useSandboxPlacement';
 import { useSandboxStorageAccess } from './useSandboxStorageAccess';
 import { useSeedDefaultSelection } from './useSeedDefaultSelection';
+
+interface PickTarget {
+  agentId: string;
+  workspaceId?: string | null;
+}
+
+/**
+ * Remember a pick for the agent and workspace it was made in, and move the
+ * composer's own default there too: a new conversation opened while the save
+ * was in flight was seeded from the folder before.
+ */
+const rememberPick = (
+  { agentId, userId, workspaceId }: PickTarget & { userId: string },
+  next: SandboxSelection,
+) => {
+  const scope = { userId, workspaceId };
+  rememberSandboxSelection(scope, agentId, next);
+  refreshSandboxDefaultSelection(
+    agentId,
+    resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
+  );
+};
 
 interface SandboxStorageSectionProps {
   agentId: string;
@@ -46,48 +69,48 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
     agentId,
     useTopicId(),
   );
-  // Read at the moment a save lands, not when the pick started: the user id
-  // can arrive while the save is in flight.
-  const scopeRef = useRef({ userId, workspaceId });
-  // A pick saved before the user id was known; remembered once it is.
-  const unrememberedRef = useRef<SandboxSelection | undefined>(undefined);
-
-  const remember = useCallback(
-    (next: SandboxSelection) => {
-      const scope = scopeRef.current;
-      if (!scope.userId) {
-        unrememberedRef.current = next;
-        return;
-      }
-
-      unrememberedRef.current = undefined;
-      rememberSandboxSelection(scope, agentId, next);
-      // A new conversation opened while the save was in flight was seeded from
-      // the folder before; carry this one over to it.
-      refreshSandboxDefaultSelection(
-        agentId,
-        resolveDefaultSandboxSelection(
-          scope.workspaceId,
-          getRememberedSandboxDirectory(scope, agentId),
-        ),
-      );
-    },
-    [agentId],
+  // The user id is read when a save lands, not when the pick began: it can
+  // arrive while the save is in flight.
+  const userIdRef = useRef(userId);
+  // A pick saved before the user id was known, with the agent and workspace it
+  // was made for; remembered once the id arrives.
+  const unrememberedRef = useRef<{ pick: SandboxSelection; target: PickTarget } | undefined>(
+    undefined,
   );
+  // The latest pick per agent: an older save that lands late must not replace
+  // a newer choice.
+  const pickSeqRef = useRef(0);
+  const latestPick = useSingleton(() => new Map<string, number>());
 
   useEffect(() => {
-    scopeRef.current = { userId, workspaceId };
-    if (userId && unrememberedRef.current) remember(unrememberedRef.current);
-  }, [remember, userId, workspaceId]);
+    userIdRef.current = userId;
+    const deferred = unrememberedRef.current;
+    if (!userId || !deferred) return;
+
+    unrememberedRef.current = undefined;
+    rememberPick({ ...deferred.target, userId }, deferred.pick);
+  }, [userId]);
 
   // Every pick that lands is remembered for the next conversation, which would
   // otherwise start back at the drive's root. A failed write is not.
   const pick = useCallback(
     async (next: SandboxSelection) => {
+      const target: PickTarget = { agentId, workspaceId };
+      const seq = ++pickSeqRef.current;
+      latestPick.set(agentId, seq);
+
       await setSelection(next);
-      remember(next);
+      if (latestPick.get(agentId) !== seq) return;
+
+      const currentUserId = userIdRef.current;
+      if (!currentUserId) {
+        unrememberedRef.current = { pick: next, target };
+        return;
+      }
+      if (unrememberedRef.current?.target.agentId === agentId) unrememberedRef.current = undefined;
+      rememberPick({ ...target, userId: currentUserId }, next);
     },
-    [remember, setSelection],
+    [agentId, latestPick, setSelection, workspaceId],
   );
   useSeedDefaultSelection(agentId, {
     eligible,

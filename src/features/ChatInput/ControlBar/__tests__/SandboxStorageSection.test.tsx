@@ -12,6 +12,7 @@ import SandboxStorageSection from '../SandboxStorageSection';
 import type { SandboxSelection } from '../useSandboxPlacement';
 
 const AGENT = 'agent-remember';
+const OTHER_AGENT = 'agent-other';
 
 const state = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -98,6 +99,9 @@ vi.mock('../SandboxDrivePicker', () => ({
       <button onClick={() => onChange({ workingDirectory: 'projects/demo' }).catch(() => {})}>
         pick-folder
       </button>
+      <button onClick={() => onChange({ workingDirectory: 'projects/other' }).catch(() => {})}>
+        pick-other
+      </button>
       <button onClick={() => onChange({}).catch(() => {})}>pick-temporary</button>
     </div>
   ),
@@ -115,6 +119,7 @@ beforeEach(() => {
 
 afterEach(() => {
   consumePendingSandboxSelection(AGENT);
+  consumePendingSandboxSelection(OTHER_AGENT);
   localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
 });
 
@@ -227,5 +232,46 @@ describe('SandboxStorageSection — T-14158', () => {
 
     openNewConversation();
     expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
+  });
+
+  it('keeps a pick saved before the user id arrived with the agent it was made for', async () => {
+    state.userId = undefined;
+    const view = render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+
+    // Moved to another agent's new conversation before the user id loads.
+    openNewConversation();
+    view.rerender(<SandboxStorageSection agentId={OTHER_AGENT} />);
+    act(() => {
+      state.userId = 'user-a';
+      commit();
+    });
+
+    expect(screen.getByTestId('chip').textContent).toBe('.');
+    view.rerender(<SandboxStorageSection agentId={AGENT} />);
+    expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
+  });
+
+  it('does not let an older save that lands late replace a newer pick', async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishFirst!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishFirst = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    await act(async () => fireEvent.click(screen.getByText('pick-other')));
+    await act(async () => finishFirst());
+
+    openNewConversation();
+    expect(screen.getByTestId('chip').textContent).toBe('projects/other');
   });
 });
