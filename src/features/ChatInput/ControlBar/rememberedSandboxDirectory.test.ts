@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   getRememberedSandboxDirectory,
+  nextSandboxPickTime,
   rememberedSandboxDirectoryKey,
   rememberSandboxSelection,
 } from './rememberedSandboxDirectory';
@@ -114,5 +115,20 @@ describe('rememberedSandboxDirectory', () => {
     rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'older' }, 1000);
 
     expect(getRememberedSandboxDirectory(ME, 'agent-1')).toBeUndefined();
+  });
+
+  // A folder remembered while the clock ran ahead; the page reloads after the
+  // clock is set back. Reading the memory moves the pick clock past it.
+  it('orders a new pick after one stored with a clock that has since gone back', () => {
+    const future = Date.now() + 60 * 60 * 1000;
+    localStorage.setItem(
+      rememberedSandboxDirectoryKey(ME, 'agent-1')!,
+      JSON.stringify({ pickedAt: future, workingDirectory: 'stale' }),
+    );
+    getRememberedSandboxDirectory(ME, 'agent-1');
+
+    rememberSandboxSelection(ME, 'agent-1', { workingDirectory: 'fresh' }, nextSandboxPickTime());
+
+    expect(getRememberedSandboxDirectory(ME, 'agent-1')).toEqual({ workingDirectory: 'fresh' });
   });
 });

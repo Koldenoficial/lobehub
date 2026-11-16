@@ -59,6 +59,25 @@ const writeEntry = (key: string, value: StoredEntry) => {
   }
 };
 
+// The ordering clock for picks: never behind the wall clock, never behind
+// anything already stored. Reading or writing an entry advances it, so after
+// a reload with the clock set back the next pick still orders after the one
+// remembered before — it would otherwise be rejected until wall time caught up.
+let pickClock = 0;
+
+const observePickedAt = (value: unknown) => {
+  const pickedAt = (value as StoredEntry | undefined)?.pickedAt;
+  if (typeof pickedAt === 'number' && Number.isFinite(pickedAt) && pickedAt > pickClock) {
+    pickClock = pickedAt;
+  }
+};
+
+/** A pick's place in time, after every pick seen so far in this tab or in storage. */
+export const nextSandboxPickTime = (): number => {
+  pickClock = Math.max(pickClock + 1, Date.now());
+  return pickClock;
+};
+
 const isValid = (value: unknown): value is RememberedSandboxDirectory => {
   if (!value || typeof value !== 'object') return false;
   const { drive, workingDirectory } = value as RememberedSandboxDirectory;
@@ -75,6 +94,7 @@ export const getRememberedSandboxDirectory = (
   if (!key) return undefined;
 
   const value = readEntry(key);
+  observePickedAt(value);
   if (!isValid(value)) return undefined;
 
   return value.drive
@@ -95,7 +115,7 @@ export const rememberSandboxSelection = (
   scope: RememberScope,
   agentId: string,
   selection: SandboxSelection,
-  pickedAt: number = Date.now(),
+  pickedAt: number = nextSandboxPickTime(),
 ): void => {
   const key = rememberedSandboxDirectoryKey(scope, agentId);
   if (!key) return;
@@ -107,6 +127,7 @@ export const rememberSandboxSelection = (
 
   // A newer pick, possibly from another tab, already landed.
   const existing = readEntry(key) as StoredEntry | undefined;
+  observePickedAt(existing);
   if (typeof existing?.pickedAt === 'number' && existing.pickedAt > pickedAt) return;
 
   // Forgetting is written too, rather than removing the entry, so an older

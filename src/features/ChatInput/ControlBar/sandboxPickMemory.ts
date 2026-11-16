@@ -3,6 +3,7 @@ import { refreshSandboxDefaultSelection } from '@/store/chat/pendingSandboxSelec
 import { resolveDefaultSandboxSelection } from './defaultSandboxSelection';
 import {
   getRememberedSandboxDirectory,
+  nextSandboxPickTime,
   rememberSandboxSelection,
 } from './rememberedSandboxDirectory';
 import type { SandboxSelection } from './useSandboxPlacement';
@@ -14,9 +15,6 @@ import type { SandboxSelection } from './useSandboxPlacement';
  * picks nor a pick still waiting for the user id may be lost in between.
  */
 
-// Increasing within this tab and close to the clock, so it also orders picks
-// against other tabs once stored with the remembered folder.
-let pickSeq = 0;
 // The newest pick whose save has landed, per user, workspace and agent — the
 // same scope the memory is kept in, so one user's pick never shadows
 // another's: an older save that lands late must not replace it. Counted on
@@ -76,8 +74,7 @@ const rememberPick = (
 
 /** Mark the start of a pick; the returned number orders it among the agent's picks. */
 export const beginSandboxPick = (): number => {
-  pickSeq = Math.max(pickSeq + 1, Date.now());
-  return pickSeq;
+  return nextSandboxPickTime();
 };
 
 /**
