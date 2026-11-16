@@ -93,14 +93,23 @@ export const settleSandboxPick = (
   pick: SandboxSelection,
   active: ActiveScope,
 ): void => {
-  if (!claimOrder({ agentId, userId, workspaceId }, seq)) return;
-
   if (!userId) {
-    deferredPicks.set(agentId, { pick, seq, workspaceId });
+    if (claimOrder({ agentId, workspaceId }, seq)) {
+      deferredPicks.set(agentId, { pick, seq, workspaceId });
+    }
     return;
   }
 
-  deferredPicks.delete(agentId);
+  // A pick still waiting for the user id may be newer than this one; it joins
+  // this user's order first, so this save is then judged against it.
+  const deferred = deferredPicks.get(agentId);
+  if (deferred) {
+    deferredPicks.delete(agentId);
+    const target = { agentId, userId, workspaceId: deferred.workspaceId };
+    if (claimOrder(target, deferred.seq)) rememberPick(target, deferred.pick, deferred.seq, active);
+  }
+
+  if (!claimOrder({ agentId, userId, workspaceId }, seq)) return;
   rememberPick({ agentId, userId, workspaceId }, pick, seq, active);
 };
 

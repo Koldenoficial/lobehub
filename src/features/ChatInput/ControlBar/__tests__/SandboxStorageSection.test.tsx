@@ -451,4 +451,31 @@ describe('SandboxStorageSection — T-14158', () => {
 
     expect(screen.getByTestId('chip').textContent).toBe('.');
   });
+
+  it('keeps a newer deferred pick when an older save lands right after the user id', async () => {
+    state.userId = undefined;
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishFirst!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishFirst = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    // The newer pick lands first and waits for the user id.
+    await act(async () => fireEvent.click(screen.getByText('pick-other')));
+    // The id becomes readable, and the older save lands before any effect runs.
+    state.userId = 'user-a';
+    await act(async () => finishFirst());
+
+    expect(getRememberedSandboxDirectory({ userId: 'user-a' }, AGENT)).toEqual({
+      workingDirectory: 'projects/other',
+    });
+  });
 });
