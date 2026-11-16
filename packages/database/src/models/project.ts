@@ -23,8 +23,8 @@ import { works } from '../schemas/work';
 import type { LobeChatDatabase } from '../type';
 import { isUserKnowledgeBase } from '../utils/knowledgeBaseType';
 import { joinTopicAgentsToProjects } from '../utils/projectTopicAgents';
-import { notChannelTopic } from '../utils/topicVisibility';
 import { topicRunStartedAtColumn } from '../utils/topicRunStartedAt';
+import { notChannelTopic } from '../utils/topicVisibility';
 import {
   buildWorkspacePayload,
   buildWorkspaceWhere,
@@ -609,6 +609,19 @@ export class ProjectModel {
       )
       .limit(1);
     return agent ?? null;
+  }
+
+  /** Whether an Agent belongs to a readable project: its main Agent or a bound member. */
+  async hasAgent(projectId: string, agentId: string) {
+    const project = await this.findById(projectId);
+    if (!project) return false;
+    if (project.coordinatorAgentId === agentId) return true;
+    const [binding] = await this.db
+      .select({ id: projectAgents.id })
+      .from(projectAgents)
+      .where(and(eq(projectAgents.projectId, projectId), eq(projectAgents.agentId, agentId)))
+      .limit(1);
+    return !!binding;
   }
 
   async addAgent(projectId: string, input: ProjectAgentInput) {

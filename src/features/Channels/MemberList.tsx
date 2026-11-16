@@ -1,19 +1,23 @@
 import type { ChannelDetail, ChannelPublicMember } from '@lobechat/types';
 import { ActionIcon, Flexbox, Spin, Text } from '@lobehub/ui';
 import * as stylex from '@stylexjs/stylex';
-import { ExternalLink, FolderCog } from 'lucide-react';
+import { ExternalLink, FolderCog, UserMinus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
+import { useUserStore } from '@/store/user';
+import { userProfileSelectors } from '@/store/user/selectors';
 
 import { openChannelAgentEnvironment } from './AgentEnvironment';
 import { ChannelStatus } from './ChannelStatus';
 import type { ChannelStatusTone } from './jobStatus';
 import { channelJobTone, memberCurrentJob, memberJobStatus } from './jobStatus';
 import { MemberAvatar } from './MemberAvatar';
-import { memberName } from './memberName';
+import { canRemoveMember } from './memberManagement';
+import { isCurrentUserMember, memberName } from './memberName';
 import { MemberProfileTrigger } from './MemberProfileTrigger';
 import { statusStyles, styles, toneStyles } from './styles';
+import { useRemoveMember } from './useMemberActions';
 import { getVisibleStatusMembers } from './visibleMembers';
 
 interface MemberEntry {
@@ -85,6 +89,9 @@ export function MemberList({
   const entries = useMemberEntries(detail);
   const { channel } = detail;
   const manageable = channel.canDelete && channel.status !== 'archived';
+  const userId = useUserStore(userProfileSelectors.userId);
+  const selfRole = detail.members.find((member) => isCurrentUserMember(member, userId))?.role;
+  const removeMember = useRemoveMember();
   return (
     <Flexbox gap={4}>
       {entries.map((entry) => (
@@ -118,6 +125,21 @@ export function MemberList({
               onClick={() => {
                 onAction?.();
                 openChannelAgentEnvironment(channel.id, entry.member);
+              }}
+            />
+          )}
+          {canRemoveMember(channel, entry.member, {
+            isSelf: isCurrentUserMember(entry.member, userId),
+            selfRole,
+          }) && (
+            <ActionIcon
+              aria-label={t('member.removeNamed', { name: entry.name })}
+              icon={UserMinus}
+              size="small"
+              title={t('member.remove')}
+              onClick={() => {
+                onAction?.();
+                removeMember(channel, entry.member, entry.name);
               }}
             />
           )}
