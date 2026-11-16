@@ -1,4 +1,7 @@
-import { refreshSandboxDefaultSelection } from '@/store/chat/pendingSandboxSelection';
+import {
+  getPendingSandboxScopeGeneration,
+  refreshSandboxDefaultSelection,
+} from '@/store/chat/pendingSandboxSelection';
 
 import { resolveDefaultSandboxSelection } from './defaultSandboxSelection';
 import {
@@ -69,11 +72,16 @@ const rememberPick = (
 
   // Read back once the entry is written, so the default is what was stored —
   // this pick, or a newer one another tab stored first.
-  const refresh = () =>
+  // The write may wait for a lock; a switch to another account or workspace
+  // meanwhile makes this default someone else's, so it is left alone then.
+  const generation = getPendingSandboxScopeGeneration();
+  const refresh = () => {
+    if (generation !== getPendingSandboxScopeGeneration()) return;
     refreshSandboxDefaultSelection(
       agentId,
       resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
     );
+  };
   if (written) void written.then(refresh);
   else refresh();
 };

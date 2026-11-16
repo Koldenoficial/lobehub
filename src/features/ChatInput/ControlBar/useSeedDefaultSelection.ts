@@ -4,6 +4,7 @@ import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspace
 import {
   getPendingSandboxSelection,
   isPendingSandboxSelectionSeeded,
+  refreshSandboxDefaultSelection,
   seedPendingSandboxSelection,
   setSandboxDefaultSelection,
   syncPendingSandboxScope,
@@ -12,7 +13,10 @@ import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
 
 import { resolveDefaultSandboxSelection } from './defaultSandboxSelection';
-import { getRememberedSandboxDirectory } from './rememberedSandboxDirectory';
+import {
+  getRememberedSandboxDirectory,
+  rememberedSandboxDirectoryKey,
+} from './rememberedSandboxDirectory';
 
 /**
  * Give a conversation that does not exist yet the plan's default place to
@@ -74,4 +78,26 @@ export const useSeedDefaultSelection = (
       ),
     );
   }, [agentId, entitled, hasTopic, userId, workspaceId]);
+
+  // Another tab may remember a folder for the same user, workspace and agent
+  // while this tab holds a blank conversation; follow it, moving only the
+  // composer's own default — a pick made here stays.
+  useEffect(() => {
+    if (!eligible || typeof window === 'undefined') return;
+    const key = rememberedSandboxDirectoryKey({ userId, workspaceId }, agentId);
+    if (!key) return;
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== key) return;
+      refreshSandboxDefaultSelection(
+        agentId,
+        resolveDefaultSandboxSelection(
+          workspaceId,
+          getRememberedSandboxDirectory({ userId, workspaceId }, agentId),
+        ),
+      );
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [agentId, eligible, userId, workspaceId]);
 };

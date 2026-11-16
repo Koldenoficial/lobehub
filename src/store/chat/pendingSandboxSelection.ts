@@ -68,6 +68,9 @@ let pendingScope: { userId?: string | null; workspaceId?: string | null } | unde
 // Bumped on every switch, so work started before one can tell it is stale.
 let scopeGeneration = 0;
 
+/** Changes on every account or workspace switch; compare before and after an await. */
+export const getPendingSandboxScopeGeneration = (): number => scopeGeneration;
+
 /** Tell the pending picks who is active now; a switch drops every pick made before it. */
 export const syncPendingSandboxScope = (scope: {
   userId?: string | null;

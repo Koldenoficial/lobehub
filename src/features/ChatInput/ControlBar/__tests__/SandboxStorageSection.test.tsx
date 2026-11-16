@@ -478,4 +478,34 @@ describe('SandboxStorageSection — T-14158', () => {
       workingDirectory: 'projects/other',
     });
   });
+
+  it("does not move another user's blank conversation when a locked write finishes after the switch", async () => {
+    let releaseLock!: () => void;
+    const request = vi.fn(
+      (_name: string, callback: () => unknown) =>
+        new Promise((resolve) => {
+          releaseLock = () => resolve(callback());
+        }),
+    );
+    vi.stubGlobal('navigator', { ...navigator, locks: { request } });
+
+    try {
+      render(<SandboxStorageSection agentId={AGENT} />);
+      await send('topic-1');
+      await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+
+      // The write waits for the lock; the tab switches to another user meanwhile.
+      act(() => {
+        state.userId = 'user-b';
+        commit();
+      });
+      openNewConversation();
+      expect(screen.getByTestId('chip').textContent).toBe('.');
+
+      await act(async () => releaseLock());
+      expect(screen.getByTestId('chip').textContent).toBe('.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
