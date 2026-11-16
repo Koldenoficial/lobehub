@@ -382,4 +382,34 @@ describe('SandboxStorageSection — T-14158', () => {
     await act(async () => finishSave());
     expect(screen.getByTestId('chip').textContent).toBe('.');
   });
+
+  it("keeps a user's pick when another user's newer pick for the same agent lands first", async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishFirst!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishFirst = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    act(() => {
+      state.userId = 'user-b';
+      commit();
+    });
+    await act(async () => fireEvent.click(screen.getByText('pick-other')));
+    await act(async () => finishFirst());
+
+    expect(getRememberedSandboxDirectory({ userId: 'user-a' }, AGENT)).toEqual({
+      workingDirectory: 'projects/demo',
+    });
+    expect(getRememberedSandboxDirectory({ userId: 'user-b' }, AGENT)).toEqual({
+      workingDirectory: 'projects/other',
+    });
+  });
 });

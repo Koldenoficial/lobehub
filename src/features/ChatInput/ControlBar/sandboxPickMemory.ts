@@ -15,10 +15,15 @@ import type { SandboxSelection } from './useSandboxPlacement';
  */
 
 let pickSeq = 0;
-// The newest pick per agent whose save has landed: an older save that lands
-// late must not replace it. Counted on success only, so a newer pick that
-// fails leaves an older one that succeeds free to land.
+// The newest pick whose save has landed, per user, workspace and agent — the
+// same scope the memory is kept in, so one user's pick never shadows
+// another's: an older save that lands late must not replace it. Counted on
+// success only, so a newer pick that fails leaves an older one that succeeds
+// free to land.
 const latestSettled = new Map<string, number>();
+
+const orderKey = ({ agentId, userId, workspaceId }: PickTarget & { userId?: string | null }) =>
+  `${userId ?? ''}:${workspaceId ?? ''}:${agentId}`;
 // Picks saved before the user id was known, with the workspace they were made
 // in; remembered once the id arrives.
 const deferredPicks = new Map<string, { pick: SandboxSelection; workspaceId?: string | null }>();
@@ -62,8 +67,8 @@ export const beginSandboxPick = (): number => {
 };
 
 /**
- * A pick's save landed. Remembered unless a newer pick for the same agent has
- * already landed; held for later when the user is not known yet.
+ * A pick's save landed. Remembered unless a newer pick by the same user, in
+ * the same workspace, for the same agent has already landed; held for later when the user is not known yet.
  *
  * `userId` is whoever made the pick; it is only filled in at landing time when
  * nobody was known when the pick began, so a sign-in as someone else in
@@ -74,8 +79,9 @@ export const settleSandboxPick = (
   pick: SandboxSelection,
   active: ActiveScope,
 ): void => {
-  if ((latestSettled.get(agentId) ?? 0) > seq) return;
-  latestSettled.set(agentId, seq);
+  const key = orderKey({ agentId, userId, workspaceId });
+  if ((latestSettled.get(key) ?? 0) > seq) return;
+  latestSettled.set(key, seq);
 
   if (!userId) {
     deferredPicks.set(agentId, { pick, workspaceId });
