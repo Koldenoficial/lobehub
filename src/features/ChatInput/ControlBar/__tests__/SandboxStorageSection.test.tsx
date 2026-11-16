@@ -70,10 +70,13 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
 }));
 
 vi.mock('@/store/user', () => ({
-  useUserStore: (selector: (s: object) => unknown) => {
-    useVersion();
-    return selector({ user: { id: state.userId } });
-  },
+  useUserStore: Object.assign(
+    (selector: (s: object) => unknown) => {
+      useVersion();
+      return selector({ user: { id: state.userId } });
+    },
+    { getState: () => ({ user: { id: state.userId } }) },
+  ),
 }));
 vi.mock('@/services/sandboxStorage', () => ({
   sandboxStorageService: { getEntitlement: vi.fn() },
@@ -268,6 +271,31 @@ describe('SandboxStorageSection — T-14158', () => {
         }),
     );
     await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    await act(async () => fireEvent.click(screen.getByText('pick-other')));
+    await act(async () => finishFirst());
+
+    openNewConversation();
+    expect(screen.getByTestId('chip').textContent).toBe('projects/other');
+  });
+
+  it('keeps pick ordering when the composer remounts during a save', async () => {
+    const first = render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishFirst!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishFirst = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    first.unmount();
+
+    render(<SandboxStorageSection agentId={AGENT} />);
     await act(async () => fireEvent.click(screen.getByText('pick-other')));
     await act(async () => finishFirst());
 
