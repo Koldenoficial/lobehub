@@ -58,6 +58,33 @@ export const setPendingSandboxSelection = (agentId: string, selection?: SandboxS
 };
 
 /**
+ * Who the pending picks were made by. The map is keyed by agent only, and a
+ * tab can switch to another account or workspace in place; picks made before
+ * that switch belong to the previous one and must not be carried by the next
+ * person's first send. The user id first becoming known is not a switch: a
+ * pick made while it loaded is that user's own.
+ */
+let pendingScope: { userId?: string | null; workspaceId?: string | null } | undefined;
+
+/** Tell the pending picks who is active now; a switch drops every pick made before it. */
+export const syncPendingSandboxScope = (scope: {
+  userId?: string | null;
+  workspaceId?: string | null;
+}): void => {
+  const previous = pendingScope;
+  pendingScope = scope;
+  if (!previous) return;
+
+  const userSwitched = !!previous.userId && previous.userId !== scope.userId;
+  const workspaceSwitched = (previous.workspaceId ?? null) !== (scope.workspaceId ?? null);
+  if (!userSwitched && !workspaceSwitched) return;
+  if (map.size === 0) return;
+
+  map.clear();
+  emit();
+};
+
+/**
  * Selections the composer filled in itself rather than the person choosing
  * them: the plan's default placement. Kept by identity, so a pick — always a
  * new object — is never mistaken for one. The server needs the difference: a

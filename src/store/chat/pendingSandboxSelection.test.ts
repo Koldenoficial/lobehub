@@ -8,6 +8,7 @@ import {
   setPendingSandboxSelection,
   setSandboxDefaultSelection,
   subscribePendingSandboxSelection,
+  syncPendingSandboxScope,
   toSandboxTopicMetadata,
 } from './pendingSandboxSelection';
 
@@ -169,6 +170,29 @@ describe('pendingSandboxSelection', () => {
       await expect(resolvePendingSandboxSelection('agent-none')).resolves.toBeUndefined();
 
       setSandboxDefaultSelection('agent-offline');
+    });
+  });
+
+  describe('syncPendingSandboxScope', () => {
+    it('drops picks when the tab switches to another user or workspace', () => {
+      syncPendingSandboxScope({ userId: 'user-a', workspaceId: 'ws_1' });
+      setPendingSandboxSelection('agent-scope', { workingDirectory: 'a-folder' });
+
+      syncPendingSandboxScope({ userId: 'user-b', workspaceId: 'ws_1' });
+      expect(getPendingSandboxSelection('agent-scope')).toBeUndefined();
+
+      setPendingSandboxSelection('agent-scope', { workingDirectory: 'b-folder' });
+      syncPendingSandboxScope({ userId: 'user-b', workspaceId: 'ws_2' });
+      expect(getPendingSandboxSelection('agent-scope')).toBeUndefined();
+    });
+
+    it('keeps a pick made while the user id was still loading', () => {
+      syncPendingSandboxScope({ userId: undefined, workspaceId: 'ws_3' });
+      setPendingSandboxSelection('agent-loading', { workingDirectory: 'mine' });
+
+      syncPendingSandboxScope({ userId: 'user-a', workspaceId: 'ws_3' });
+      expect(getPendingSandboxSelection('agent-loading')).toEqual({ workingDirectory: 'mine' });
+      consumePendingSandboxSelection('agent-loading');
     });
   });
 });

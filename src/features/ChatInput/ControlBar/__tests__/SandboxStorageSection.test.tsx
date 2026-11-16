@@ -438,4 +438,17 @@ describe('SandboxStorageSection — T-14158', () => {
     openNewConversation();
     expect(screen.getByTestId('chip').textContent).toBe('projects/other');
   });
+
+  it("drops a blank conversation's pick when the tab switches to another user", async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
+
+    act(() => {
+      state.userId = 'user-b';
+      commit();
+    });
+
+    expect(screen.getByTestId('chip').textContent).toBe('.');
+  });
 });
