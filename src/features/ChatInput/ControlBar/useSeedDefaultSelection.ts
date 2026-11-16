@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import {
   getPendingSandboxSelection,
+  isPendingSandboxSelectionSeeded,
   seedPendingSandboxSelection,
   setSandboxDefaultSelection,
 } from '@/store/chat/pendingSandboxSelection';
@@ -51,7 +52,11 @@ export const useSeedDefaultSelection = (
   }, [agentId, eligible, hasTopic, userId, workspaceId]);
 
   useEffect(() => {
-    if (!entitled || hasTopic || getPendingSandboxSelection(agentId)) return;
+    if (!entitled || hasTopic) return;
+    // A pick stays; a default filled in earlier is provisional and is filled in
+    // again — the user id can arrive after the entitlement on a cold boot, and
+    // the remembered folder only becomes readable then.
+    if (getPendingSandboxSelection(agentId) && !isPendingSandboxSelectionSeeded(agentId)) return;
 
     seedPendingSandboxSelection(
       agentId,

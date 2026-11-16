@@ -20,8 +20,10 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
   useActiveWorkspaceId: () => null,
 }));
 
+const user = vi.hoisted(() => ({ id: 'user-a' as string | undefined }));
+
 vi.mock('@/store/user', () => ({
-  useUserStore: (selector: (s: object) => unknown) => selector({ user: { id: 'user-a' } }),
+  useUserStore: (selector: (s: object) => unknown) => selector({ user: { id: user.id } }),
 }));
 
 vi.mock('@/services/sandboxStorage', () => ({
@@ -39,6 +41,7 @@ afterEach(() => {
   consumePendingSandboxSelection(AGENT);
   getEntitlement.mockReset();
   localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
+  user.id = 'user-a';
 });
 
 describe('useSeedDefaultSelection', () => {
@@ -116,5 +119,21 @@ describe('useSeedDefaultSelection', () => {
     await expect(resolvePendingSandboxSelection(AGENT)).resolves.toEqual({
       workingDirectory: 'projects/demo',
     });
+  });
+
+  // On a cold boot the persisted entitlement can be ready before the user id;
+  // the root seeded meanwhile must give way once the remembered folder is readable.
+  it('replaces the provisional root once the user id arrives', () => {
+    rememberSandboxSelection({ userId: 'user-a' }, AGENT, { workingDirectory: 'projects/demo' });
+    user.id = undefined;
+    const { rerender } = renderHook(() =>
+      useSeedDefaultSelection(AGENT, { eligible: true, entitled: true, hasTopic: false }),
+    );
+    expect(getPendingSandboxSelection(AGENT)).toEqual({ workingDirectory: '.' });
+
+    user.id = 'user-a';
+    rerender();
+
+    expect(getPendingSandboxSelection(AGENT)).toEqual({ workingDirectory: 'projects/demo' });
   });
 });

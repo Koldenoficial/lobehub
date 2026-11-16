@@ -73,6 +73,17 @@ export const seedPendingSandboxSelection = (agentId: string, selection: SandboxS
 };
 
 /**
+ * Whether the agent's pending slot holds a default the composer filled in
+ * itself, rather than a pick. Such a value is provisional: it may be replaced
+ * once a better default is known (the signed-in user arriving after the
+ * entitlement, say), while a pick never is.
+ */
+export const isPendingSandboxSelectionSeeded = (agentId: string): boolean => {
+  const selection = map.get(agentId);
+  return !!selection && seeded.has(selection);
+};
+
+/**
  * The place an agent's next conversation starts when nobody picks one, and
  * the plan turns out to include a drive. Registered by the composer as soon as
  * it knows the agent runs in the sandbox — before the entitlement has loaded —
