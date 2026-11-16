@@ -28,17 +28,27 @@ interface PickTarget {
   workspaceId?: string | null;
 }
 
+/** Who is signed in, and where, when a save lands. */
+export interface ActiveScope {
+  userId?: string | null;
+  workspaceId?: string | null;
+}
+
 /**
- * Remember a pick for the agent and workspace it was made in, and move the
- * composer's own default there too: a new conversation opened while the save
- * was in flight was seeded from the folder before.
+ * Remember a pick for the user, agent and workspace it was made in, and move
+ * the composer's own default there too: a new conversation opened while the
+ * save was in flight was seeded from the folder before. That default is kept
+ * per agent only, so it moves only while the same user is still active in the
+ * same workspace — never into someone else's new conversation.
  */
 const rememberPick = (
   { agentId, userId, workspaceId }: PickTarget & { userId: string },
   pick: SandboxSelection,
+  active: ActiveScope,
 ) => {
   const scope = { userId, workspaceId };
   rememberSandboxSelection(scope, agentId, pick);
+  if (active.userId !== userId || (active.workspaceId ?? null) !== (workspaceId ?? null)) return;
   refreshSandboxDefaultSelection(
     agentId,
     resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
@@ -62,6 +72,7 @@ export const beginSandboxPick = (): number => {
 export const settleSandboxPick = (
   { agentId, seq, userId, workspaceId }: PickTarget & { seq: number; userId?: string | null },
   pick: SandboxSelection,
+  active: ActiveScope,
 ): void => {
   if ((latestSettled.get(agentId) ?? 0) > seq) return;
   latestSettled.set(agentId, seq);
@@ -72,13 +83,13 @@ export const settleSandboxPick = (
   }
 
   deferredPicks.delete(agentId);
-  rememberPick({ agentId, userId, workspaceId }, pick);
+  rememberPick({ agentId, userId, workspaceId }, pick, active);
 };
 
-/** Remember every pick that was waiting for the user id. */
-export const flushDeferredSandboxPicks = (userId: string): void => {
+/** Remember every pick that was waiting for the user id, for the user now known. */
+export const flushDeferredSandboxPicks = (active: ActiveScope & { userId: string }): void => {
   for (const [agentId, { pick, workspaceId }] of deferredPicks) {
-    rememberPick({ agentId, userId, workspaceId }, pick);
+    rememberPick({ agentId, userId: active.userId, workspaceId }, pick, active);
   }
   deferredPicks.clear();
 };

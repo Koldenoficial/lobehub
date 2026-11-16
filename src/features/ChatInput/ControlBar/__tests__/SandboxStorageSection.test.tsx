@@ -356,4 +356,30 @@ describe('SandboxStorageSection — T-14158', () => {
       workingDirectory: 'projects/demo',
     });
   });
+
+  it("never moves another user's new conversation to a folder picked before they signed in", async () => {
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+
+    let finishSave!: () => void;
+    state.updateTopicMetadata.mockImplementationOnce(
+      (id, metadata) =>
+        new Promise<void>((resolve) => {
+          finishSave = () => {
+            state.topics[id] = { ...state.topics[id], ...metadata };
+            resolve();
+          };
+        }),
+    );
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+    act(() => {
+      state.userId = 'user-b';
+      commit();
+    });
+    openNewConversation();
+    expect(screen.getByTestId('chip').textContent).toBe('.');
+
+    await act(async () => finishSave());
+    expect(screen.getByTestId('chip').textContent).toBe('.');
+  });
 });

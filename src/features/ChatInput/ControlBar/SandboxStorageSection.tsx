@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useEffect } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import SafeBoundary from '@/components/ErrorBoundary';
@@ -45,10 +45,15 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
     agentId,
     useTopicId(),
   );
+  // Where the composer is now, read when a save lands; the workspace may have
+  // changed since the pick began.
+  const activeWorkspaceRef = useRef(workspaceId);
+
   // Picks waiting for the user id are remembered once it arrives.
   useEffect(() => {
-    if (userId) flushDeferredSandboxPicks(userId);
-  }, [userId]);
+    activeWorkspaceRef.current = workspaceId;
+    if (userId) flushDeferredSandboxPicks({ userId, workspaceId });
+  }, [userId, workspaceId]);
 
   // Every pick that lands is remembered for the next conversation, which would
   // otherwise start back at the drive's root. A failed write is not. The user
@@ -67,6 +72,10 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
           workspaceId,
         },
         next,
+        {
+          userId: userProfileSelectors.userId(useUserStore.getState()),
+          workspaceId: activeWorkspaceRef.current,
+        },
       );
     },
     [agentId, setSelection, workspaceId],
