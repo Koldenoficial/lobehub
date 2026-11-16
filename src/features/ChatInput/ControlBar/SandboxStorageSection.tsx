@@ -1,12 +1,14 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 
+import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import SafeBoundary from '@/components/ErrorBoundary';
 
 import { useTopicId } from '../hooks/useTopicId';
+import { rememberSandboxSelection } from './rememberedSandboxDirectory';
 import SandboxDrivePicker from './SandboxDrivePicker';
-import { useSandboxPlacement } from './useSandboxPlacement';
+import { type SandboxSelection, useSandboxPlacement } from './useSandboxPlacement';
 import { useSandboxStorageAccess } from './useSandboxStorageAccess';
 import { useSeedDefaultSelection } from './useSeedDefaultSelection';
 
@@ -22,8 +24,8 @@ interface SandboxStorageSectionProps {
  *
  * Nothing chosen means a temporary sandbox, cleaned up with the session; a
  * folder on the drive keeps its files, and a repository starts from a checkout.
- * A plan with a drive starts each new conversation on its default folder rather
- * than nothing.
+ * A plan with a drive starts each new conversation in the folder the agent's
+ * last conversation was put in, or on its default folder rather than nothing.
  *
  * A plan without a drive still gets the chip: the temporary sandbox is
  * everyone's, and the way to a plan is a row in the same menu rather than a
@@ -31,9 +33,19 @@ interface SandboxStorageSectionProps {
  */
 const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }) => {
   const { eligible, status } = useSandboxStorageAccess(agentId);
+  const workspaceId = useActiveWorkspaceId();
   const { projectId, selection, setSelection, topicId } = useSandboxPlacement(
     agentId,
     useTopicId(),
+  );
+  // Every pick that lands is remembered for the next conversation, which would
+  // otherwise start back at the drive's root. A failed write is not.
+  const pick = useCallback(
+    async (next: SandboxSelection) => {
+      await setSelection(next);
+      rememberSandboxSelection(workspaceId, agentId, next);
+    },
+    [agentId, setSelection, workspaceId],
   );
   useSeedDefaultSelection(agentId, {
     eligible,
@@ -49,7 +61,7 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
       projectId={projectId}
       topicId={topicId}
       value={selection}
-      onChange={setSelection}
+      onChange={pick}
     />
   );
 });

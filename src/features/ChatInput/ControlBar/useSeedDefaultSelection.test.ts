@@ -8,6 +8,10 @@ import {
   setPendingSandboxSelection,
 } from '@/store/chat/pendingSandboxSelection';
 
+import {
+  REMEMBERED_SANDBOX_DIRECTORY_KEY,
+  rememberSandboxSelection,
+} from './rememberedSandboxDirectory';
 import { useSeedDefaultSelection } from './useSeedDefaultSelection';
 
 const getEntitlement = vi.hoisted(() => vi.fn());
@@ -30,6 +34,7 @@ const AGENT = 'agent-seed';
 afterEach(() => {
   consumePendingSandboxSelection(AGENT);
   getEntitlement.mockReset();
+  localStorage.removeItem(REMEMBERED_SANDBOX_DIRECTORY_KEY);
 });
 
 describe('useSeedDefaultSelection', () => {
@@ -74,6 +79,38 @@ describe('useSeedDefaultSelection', () => {
 
     await expect(resolvePendingSandboxSelection(AGENT)).resolves.toEqual({
       workingDirectory: '.',
+    });
+  });
+
+  // T-14158: every new conversation went back to the drive's root.
+  it('starts the next conversation in the folder the last one was put in', () => {
+    const { rerender } = renderHook(
+      ({ hasTopic }) =>
+        useSeedDefaultSelection(AGENT, { eligible: true, entitled: true, hasTopic }),
+      { initialProps: { hasTopic: false } },
+    );
+    expect(getPendingSandboxSelection(AGENT)).toEqual({ workingDirectory: '.' });
+
+    // The first send consumes the slot; the person then moves the conversation.
+    consumePendingSandboxSelection(AGENT);
+    rerender({ hasTopic: true });
+    rememberSandboxSelection(null, AGENT, { workingDirectory: 'projects/demo' });
+
+    // A new conversation opens.
+    rerender({ hasTopic: false });
+    expect(getPendingSandboxSelection(AGENT)).toEqual({ workingDirectory: 'projects/demo' });
+  });
+
+  it('registers the remembered folder for a send made before the entitlement loads', async () => {
+    getEntitlement.mockResolvedValue({ entitled: true });
+    rememberSandboxSelection(null, AGENT, { workingDirectory: 'projects/demo' });
+
+    renderHook(() =>
+      useSeedDefaultSelection(AGENT, { eligible: true, entitled: false, hasTopic: false }),
+    );
+
+    await expect(resolvePendingSandboxSelection(AGENT)).resolves.toEqual({
+      workingDirectory: 'projects/demo',
     });
   });
 });
