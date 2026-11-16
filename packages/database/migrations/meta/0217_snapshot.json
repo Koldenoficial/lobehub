@@ -6,7 +6,7 @@
   },
   "dialect": "postgresql",
   "enums": {},
-  "id": "f6a68f87-d8af-47b3-8754-fd8b29b72d02",
+  "id": "ace15268-4ec9-4772-8465-4569b6704f93",
   "policies": {},
   "prevId": "7c29d9b7-1cda-4670-a1a0-27ecc5cf0017",
   "roles": {},
@@ -12388,6 +12388,12 @@
         "last_read_sequence": {
           "name": "last_read_sequence",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pinned_at": {
+          "name": "pinned_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
