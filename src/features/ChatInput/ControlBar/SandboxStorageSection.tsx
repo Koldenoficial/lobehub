@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import SafeBoundary from '@/components/ErrorBoundary';
@@ -46,21 +46,48 @@ const SandboxStorageSectionInner = memo<SandboxStorageSectionProps>(({ agentId }
     agentId,
     useTopicId(),
   );
-  // Every pick that lands is remembered for the next conversation, which would
-  // otherwise start back at the drive's root. A failed write is not.
-  const pick = useCallback(
-    async (next: SandboxSelection) => {
-      await setSelection(next);
-      const scope = { userId, workspaceId };
+  // Read at the moment a save lands, not when the pick started: the user id
+  // can arrive while the save is in flight.
+  const scopeRef = useRef({ userId, workspaceId });
+  // A pick saved before the user id was known; remembered once it is.
+  const unrememberedRef = useRef<SandboxSelection | undefined>(undefined);
+
+  const remember = useCallback(
+    (next: SandboxSelection) => {
+      const scope = scopeRef.current;
+      if (!scope.userId) {
+        unrememberedRef.current = next;
+        return;
+      }
+
+      unrememberedRef.current = undefined;
       rememberSandboxSelection(scope, agentId, next);
       // A new conversation opened while the save was in flight was seeded from
       // the folder before; carry this one over to it.
       refreshSandboxDefaultSelection(
         agentId,
-        resolveDefaultSandboxSelection(workspaceId, getRememberedSandboxDirectory(scope, agentId)),
+        resolveDefaultSandboxSelection(
+          scope.workspaceId,
+          getRememberedSandboxDirectory(scope, agentId),
+        ),
       );
     },
-    [agentId, setSelection, userId, workspaceId],
+    [agentId],
+  );
+
+  useEffect(() => {
+    scopeRef.current = { userId, workspaceId };
+    if (userId && unrememberedRef.current) remember(unrememberedRef.current);
+  }, [remember, userId, workspaceId]);
+
+  // Every pick that lands is remembered for the next conversation, which would
+  // otherwise start back at the drive's root. A failed write is not.
+  const pick = useCallback(
+    async (next: SandboxSelection) => {
+      await setSelection(next);
+      remember(next);
+    },
+    [remember, setSelection],
   );
   useSeedDefaultSelection(agentId, {
     eligible,

@@ -23,6 +23,7 @@ const state = vi.hoisted(() => {
       for (const listener of listeners) listener();
     },
     topicId: null as string | null,
+    userId: 'user-a' as string | undefined,
     topics: {} as Record<string, Record<string, unknown>>,
     updateTopicMetadata: vi.fn(),
     version: 0,
@@ -68,7 +69,10 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
 }));
 
 vi.mock('@/store/user', () => ({
-  useUserStore: (selector: (s: object) => unknown) => selector({ user: { id: 'user-a' } }),
+  useUserStore: (selector: (s: object) => unknown) => {
+    useVersion();
+    return selector({ user: { id: state.userId } });
+  },
 }));
 vi.mock('@/services/sandboxStorage', () => ({
   sandboxStorageService: { getEntitlement: vi.fn() },
@@ -101,6 +105,7 @@ vi.mock('../SandboxDrivePicker', () => ({
 
 beforeEach(() => {
   state.topicId = null;
+  state.userId = 'user-a';
   state.topics = {};
   state.updateTopicMetadata.mockReset().mockImplementation(async (id, metadata) => {
     state.topics[id] = { ...state.topics[id], ...metadata };
@@ -205,6 +210,22 @@ describe('SandboxStorageSection — T-14158', () => {
     expect(screen.getByTestId('chip').textContent).toBe('.');
 
     await act(async () => finishSave());
+    expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
+  });
+
+  // Cold boot: the picker can be ready before the signed-in user is known.
+  it('remembers a pick saved before the user id arrived', async () => {
+    state.userId = undefined;
+    render(<SandboxStorageSection agentId={AGENT} />);
+    await send('topic-1');
+    await act(async () => fireEvent.click(screen.getByText('pick-folder')));
+
+    act(() => {
+      state.userId = 'user-a';
+      commit();
+    });
+
+    openNewConversation();
     expect(screen.getByTestId('chip').textContent).toBe('projects/demo');
   });
 });
