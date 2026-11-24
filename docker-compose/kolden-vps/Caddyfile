@@ -1,0 +1,30 @@
+# Caddy gets and renews the HTTPS certificates by itself.
+# Each domain below must have a DNS "A" record pointing to the VPS IP.
+{
+	email {$ACME_EMAIL}
+}
+
+# LobeHub (chat)
+{$LOBE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy lobe:3210
+}
+
+# LobeHub file storage (uploads in conversations)
+{$S3_DOMAIN} {
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy rustfs:9000
+}
+
+# LobeHub Agent Gateway (WebSocket, handled automatically by Caddy)
+{$GATEWAY_DOMAIN} {
+	reverse_proxy lobe-gateway:8787
+}
+
+# Twenty CRM
+{$CRM_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy twenty-server:3000
+}

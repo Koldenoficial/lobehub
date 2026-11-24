@@ -1,0 +1,333 @@
+# LobeHub + Twenty CRM on one small VPS (2 vCPU / 4 GB RAM).
+#
+# Only Caddy is published to the internet (ports 80/443). It issues HTTPS
+# certificates automatically and routes each subdomain to its service.
+# Databases, Redis and storage stay on the internal Docker network.
+#
+# Memory limits (mem_limit) keep one service from starving the others on a
+# 4 GB machine. Raise them after upgrading the VPS.
+#
+# See LEIA-ME.md for the full setup guide.
+
+name: kolden
+
+services:
+  # ---------------------------------------------------------------------------
+  # Reverse proxy + automatic HTTPS
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      - 'LOBE_DOMAIN=${LOBE_DOMAIN}'
+      - 'S3_DOMAIN=${S3_DOMAIN}'
+      - 'GATEWAY_DOMAIN=${GATEWAY_DOMAIN}'
+      - 'CRM_DOMAIN=${CRM_DOMAIN}'
+      - 'ACME_EMAIL=${ACME_EMAIL}'
+    volumes:
+      - './Caddyfile:/etc/caddy/Caddyfile:ro'
+      - 'caddy-data:/data'
+      - 'caddy-config:/config'
+    mem_limit: 128m
+    restart: always
+    networks:
+      - web
+
+  # ---------------------------------------------------------------------------
+  # LobeHub
+  # ---------------------------------------------------------------------------
+  lobe:
+    image: lobehub/lobehub:${LOBE_TAG:-latest}
+    container_name: lobehub
+    depends_on:
+      lobe-postgres:
+        condition: service_healthy
+      lobe-redis:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
+    environment:
+      - 'APP_URL=https://${LOBE_DOMAIN}'
+      - 'INTERNAL_APP_URL=http://localhost:3210'
+      - 'KEY_VAULTS_SECRET=${KEY_VAULTS_SECRET}'
+      - 'AUTH_SECRET=${AUTH_SECRET}'
+      - 'JWKS_KEY=${JWKS_KEY}'
+      - 'DATABASE_URL=postgresql://postgres:${LOBE_POSTGRES_PASSWORD}@lobe-postgres:5432/lobechat'
+      - 'ES_REINDEX_STATE_DIR=/app/.elasticsearch-reindex'
+      # Browsers upload files straight to this public S3 address
+      - 'S3_ENDPOINT=https://${S3_DOMAIN}'
+      # Server-side S3 requests stay on the internal network
+      - 'S3_INTERNAL_ENDPOINT=http://rustfs:9000'
+      - 'S3_BUCKET=lobe'
+      - 'S3_ENABLE_PATH_STYLE=1'
+      - 'S3_ACCESS_KEY=${RUSTFS_ACCESS_KEY}'
+      - 'S3_ACCESS_KEY_ID=${RUSTFS_ACCESS_KEY}'
+      - 'S3_SECRET_ACCESS_KEY=${RUSTFS_SECRET_KEY}'
+      - 'S3_SET_ACL=0'
+      - 'LLM_VISION_IMAGE_USE_BASE64=1'
+      - 'REDIS_URL=redis://lobe-redis:6379'
+      - 'REDIS_PREFIX=lobechat'
+      - 'REDIS_TLS=0'
+      # Gateway Mode: agent runs execute on the server and stream to the browser
+      - 'ENABLE_AGENT_GATEWAY=1'
+      - 'AGENT_GATEWAY_URL=https://${GATEWAY_DOMAIN}'
+      - 'AGENT_GATEWAY_INTERNAL_URL=http://lobe-gateway:8787'
+      - 'AGENT_GATEWAY_SERVICE_TOKEN=${GATEWAY_SERVICE_TOKEN}'
+      - 'DEVICE_GATEWAY_SERVICE_TOKEN=${GATEWAY_SERVICE_TOKEN}'
+      - 'DEVICE_GATEWAY_URL=http://lobe-gateway:8788'
+      # Who may create an account (comma-separated). Empty = anyone.
+      - 'AUTH_ALLOWED_EMAILS=${AUTH_ALLOWED_EMAILS:-}'
+    # Optional extra LobeHub settings (AI provider keys etc.). See lobehub.env.example
+    env_file:
+      - path: ./lobehub.env
+        required: false
+    volumes:
+      - 'lobe-fts-state:/app/.elasticsearch-reindex'
+    mem_limit: 1g
+    restart: always
+    networks:
+      - web
+      - lobe
+
+  lobe-gateway:
+    image: ghcr.io/lobehub/lobehub-gateway:${LOBE_GATEWAY_TAG:-0.5.0}
+    container_name: lobe-gateway
+    environment:
+      - 'SERVICE_TOKEN=${GATEWAY_SERVICE_TOKEN}'
+      # Public key only: the private JWKS_KEY stays in the lobe container
+      - 'JWKS_PUBLIC_KEY=${JWKS_PUBLIC_KEY}'
+      - 'LOBE_API_BASE_URL=http://lobe:3210'
+    mem_limit: 192m
+    restart: always
+    networks:
+      - web
+      - lobe
+
+  lobe-postgres:
+    image: paradedb/paradedb:latest-pg17
+    container_name: lobe-postgres
+    # Keep the image's preload list (its first-start bootstrap needs pg_cron).
+    # Small memory settings for a 4 GB VPS.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_search,pg_cron,pg_stat_statements
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=50
+    environment:
+      - 'POSTGRES_DB=lobechat'
+      - 'POSTGRES_PASSWORD=${LOBE_POSTGRES_PASSWORD}'
+    volumes:
+      - 'lobe-postgres-data:/var/lib/postgresql/data'
+    healthcheck:
+      # TCP probe: during first-time init the image only listens on the Unix socket
+      test: ['CMD-SHELL', 'pg_isready -U postgres -h 127.0.0.1']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    mem_limit: 512m
+    restart: always
+    networks:
+      - lobe
+
+  lobe-redis:
+    image: redis:7-alpine
+    container_name: lobe-redis
+    command: redis-server --save 60 1000 --appendonly yes
+    volumes:
+      - 'lobe-redis-data:/data'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    mem_limit: 192m
+    restart: always
+    networks:
+      - lobe
+
+  rustfs:
+    image: rustfs/rustfs:${RUSTFS_TAG:-latest}
+    container_name: lobe-rustfs
+    environment:
+      - 'RUSTFS_CONSOLE_ENABLE=false'
+      - 'RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY}'
+      - 'RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY}'
+    command: ['--access-key', '${RUSTFS_ACCESS_KEY}', '--secret-key', '${RUSTFS_SECRET_KEY}', '/data']
+    volumes:
+      - 'rustfs-data:/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9000/health >/dev/null 2>&1 || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+    restart: always
+    networks:
+      - web
+      - lobe
+
+  # Creates the "lobe" bucket with public read + CORS, then exits
+  rustfs-init:
+    image: rustfs/rc:latest
+    container_name: lobe-rustfs-init
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    volumes:
+      - './bucket.config.json:/bucket.config.json:ro'
+    entrypoint: /bin/sh
+    command: -c ' set -eu; rc alias set rustfs "http://rustfs:9000" "${RUSTFS_ACCESS_KEY}" "${RUSTFS_SECRET_KEY}"; rc mb "rustfs/lobe" --ignore-existing; rc anonymous set-json "/bucket.config.json" "rustfs/lobe"; printf "%s" "<CORSConfiguration><CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule></CORSConfiguration>" | rc bucket cors set "rustfs/lobe" -; '
+    restart: 'no'
+    networks:
+      - lobe
+
+  # Optional web search for LobeHub. Off by default to save ~200 MB of RAM.
+  # Turn on with COMPOSE_PROFILES=busca in .env and SEARXNG_URL=http://searxng:8080
+  # in lobehub.env (LobeHub rejects an empty SEARXNG_URL, so never set it blank).
+  searxng:
+    image: searxng/searxng
+    container_name: lobe-searxng
+    profiles: [busca]
+    volumes:
+      - './searxng-settings.yml:/etc/searxng/settings.yml:ro'
+    environment:
+      - 'SEARXNG_SETTINGS_FILE=/etc/searxng/settings.yml'
+    mem_limit: 256m
+    restart: always
+    networks:
+      - lobe
+
+  # ---------------------------------------------------------------------------
+  # Twenty CRM
+  # ---------------------------------------------------------------------------
+  twenty-server:
+    image: twentycrm/twenty:${TWENTY_TAG:-latest}
+    container_name: twenty-server
+    stop_grace_period: 120s
+    depends_on:
+      twenty-postgres:
+        condition: service_healthy
+      twenty-redis:
+        condition: service_healthy
+    environment: &twenty-env
+      NODE_PORT: 3000
+      SERVER_URL: https://${CRM_DOMAIN}
+      PG_DATABASE_URL: postgres://postgres:${TWENTY_POSTGRES_PASSWORD}@twenty-postgres:5432/twenty
+      REDIS_URL: redis://twenty-redis:6379
+      STORAGE_TYPE: local
+      ENCRYPTION_KEY: ${TWENTY_ENCRYPTION_KEY}
+    volumes:
+      - 'twenty-local-data:/app/packages/twenty-server/.local-storage'
+    healthcheck:
+      test: curl --fail http://localhost:3000/healthz
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+    mem_limit: 1g
+    restart: always
+    networks:
+      - web
+      - twenty
+
+  twenty-worker:
+    image: twentycrm/twenty:${TWENTY_TAG:-latest}
+    container_name: twenty-worker
+    command: ['yarn', 'worker:prod']
+    depends_on:
+      twenty-postgres:
+        condition: service_healthy
+      twenty-server:
+        condition: service_healthy
+    environment:
+      <<: *twenty-env
+      DISABLE_DB_MIGRATIONS: 'true' # already done by twenty-server
+      DISABLE_CRON_JOBS_REGISTRATION: 'true' # already done by twenty-server
+      # The default Node.js heap is too small for the worker and it crashes with
+      # "JavaScript heap out of memory"; keep this below mem_limit
+      NODE_OPTIONS: --max-old-space-size=768
+    volumes:
+      - 'twenty-local-data:/app/packages/twenty-server/.local-storage'
+    mem_limit: 1g
+    restart: always
+    networks:
+      - twenty
+
+  twenty-postgres:
+    image: postgres:16
+    container_name: twenty-postgres
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=50
+    environment:
+      POSTGRES_DB: twenty
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${TWENTY_POSTGRES_PASSWORD}
+    volumes:
+      - 'twenty-postgres-data:/var/lib/postgresql/data'
+    healthcheck:
+      test: pg_isready -U postgres -h localhost -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    restart: always
+    networks:
+      - twenty
+
+  twenty-redis:
+    image: redis:7-alpine
+    container_name: twenty-redis
+    # Twenty keeps its job queue in Redis: never evict keys
+    command: redis-server --maxmemory-policy noeviction
+    volumes:
+      - 'twenty-redis-data:/data'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 128m
+    restart: always
+    networks:
+      - twenty
+
+networks:
+  # Services Caddy can reach
+  web:
+  # Each app's database and Redis live on their own network:
+  # Caddy and the other app cannot reach them
+  lobe:
+  twenty:
+
+volumes:
+  caddy-data:
+  caddy-config:
+  lobe-postgres-data:
+  lobe-redis-data:
+  lobe-fts-state:
+  rustfs-data:
+  twenty-postgres-data:
+  twenty-redis-data:
+  twenty-local-data:
