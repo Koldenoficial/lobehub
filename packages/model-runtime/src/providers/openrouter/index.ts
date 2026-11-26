@@ -3,6 +3,7 @@ import { ModelProvider } from 'model-bank';
 import type { OpenAICompatibleFactoryOptions } from '../../core/openaiCompatible';
 import { createOpenAICompatibleRuntime } from '../../core/openaiCompatible';
 import { processMultiProviderModelList } from '../../utils/modelParse';
+import { createOpenRouterImage } from './createImage';
 import type { OpenRouterModelCard, OpenRouterReasoning } from './type';
 
 const formatPrice = (price?: string) => {
@@ -96,6 +97,7 @@ export const params = {
       } as any;
     },
   },
+  createImage: createOpenRouterImage,
   constructorOptions: {
     // App attribution for OpenRouter rankings: https://openrouter.ai/docs/app-attribution
     // Categories accept at most 2 recognized values per request and cannot be removed once merged.

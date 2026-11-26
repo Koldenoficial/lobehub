@@ -1,6 +1,7 @@
 import type { AIChatModelCard } from '../../types/aiModel';
 import { openrouterDecisionModels } from './decision';
 import { openrouterGoogleModels } from './google';
+import { openrouterImageModels } from './image';
 
 // https://openrouter.ai/docs/api-reference/list-available-models
 const openrouterChatModels: AIChatModelCard[] = [
@@ -1120,5 +1121,9 @@ const openrouterChatModels: AIChatModelCard[] = [
   },
 ];
 
-export const allModels = [...openrouterChatModels, ...openrouterDecisionModels];
+export const allModels = [
+  ...openrouterChatModels,
+  ...openrouterDecisionModels,
+  ...openrouterImageModels,
+];
 export default allModels;
