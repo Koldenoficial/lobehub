@@ -720,6 +720,24 @@ describe('convertOpenAIImageUsage', () => {
       cost: 0.16647, // Based on pricing: 14 * 5/1M + 0 * 10/1M + 4160 * 40/1M = 0.00007 + 0 + 0.1664 = 0.16647
     });
   });
+
+  it('should not throw when usage has no input_tokens_details (OpenRouter images API)', () => {
+    // OpenRouter's images API returns token totals without the per-modality breakdown
+    const openRouterUsage = {
+      input_tokens: 120,
+      output_tokens: 4096,
+      total_tokens: 4216,
+    } as OpenAI.Images.ImagesResponse.Usage;
+
+    const result = convertOpenAIImageUsage(openRouterUsage);
+
+    expect(result).toEqual({
+      outputImageTokens: 4096,
+      totalInputTokens: 120,
+      totalOutputTokens: 4096,
+      totalTokens: 4216,
+    });
+  });
 });
 
 describe('convertOpenAITranscriptionUsage', () => {

@@ -212,9 +212,11 @@ export const convertOpenAIImageUsage = (
   usage: OpenAI.Images.ImagesResponse.Usage,
   pricing?: Pricing,
 ): ModelUsage => {
+  // OpenAI-compatible images APIs such as OpenRouter's omit the per-modality breakdown; a missing
+  // breakdown must not fail a generation whose image was already produced.
   const data: ModelTokensUsage = {
-    inputImageTokens: usage.input_tokens_details.image_tokens,
-    inputTextTokens: usage.input_tokens_details.text_tokens,
+    inputImageTokens: usage.input_tokens_details?.image_tokens,
+    inputTextTokens: usage.input_tokens_details?.text_tokens,
     outputImageTokens: usage.output_tokens,
     totalInputTokens: usage.input_tokens,
     totalOutputTokens: usage.output_tokens,
